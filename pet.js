@@ -14,7 +14,7 @@
       如果你用的是 gif / webp，或者想换成别的名字，改下面这个数组就行。
       （也可以直接写 http(s):// 的在线图片地址。）
    ──────────────────────────────────────────────────────────────────────── */
-const PET_IMAGE_CANDIDATES = ["/assets/pet/pet.png", "/assets/pet/pet.gif"];
+const PET_IMAGE_CANDIDATES = ["/DSH/assets/pet/pet.png", "/assets/pet/pet.gif"];
 
 /* ── ② 点击宠物时，泡泡里出现的内容（文案 / 图片 / GIF）────────────────
       字符串 = 一句文案；对象 = 一张图片或 GIF。随便增删，每次点击随机抽一条。
@@ -29,15 +29,15 @@ const PET_MESSAGES = [
   "给我整点tonken！！！",
   "傻福挂噶唐鼠",
   // ↓ 图片 / GIF 示例（换地址即可用你自己的图）
-  { image: "/assets/pet/bubble/sq1.gif", alt: "生气砸锅" },
-  { image: "/assets/pet/bubble/sq2.gif", alt: "生气1" },
-  { image: "/assets/pet/bubble/hq1.jpg", alt: "哈气" },
-  { image: "/assets/pet/bubble/shaxiao1.png", alt: "傻笑" },
-  { image: "/assets/pet/bubble/benti1.png", alt: "本体" },
-  { image: "/assets/pet/bubble/yaofan.png", alt: "yaofan" },
-  { image: "/assets/pet/bubble/chibaifan.jpg", alt: "吃白饭" },
-  { image: "/assets/pet/bubble/xuanfan.gif", alt: "炫饭" },
-  { image: "/assets/pet/bubble/fanne.jpg", alt: "饭呢" },
+  { image: "/DSH/assets/pet/bubble/sq1.gif", alt: "生气砸锅" },
+  { image: "/DSH/assets/pet/bubble/sq2.gif", alt: "生气1" },
+  { image: "/DSH/assets/pet/bubble/hq1.jpg", alt: "哈气" },
+  { image: "/DSH/assets/pet/bubble/shaxiao1.png", alt: "傻笑" },
+  { image: "/DSH/assets/pet/bubble/benti1.png", alt: "本体" },
+  { image: "/DSH/assets/pet/bubble/yaofan.png", alt: "yaofan" },
+  { image: "/DSH/assets/pet/bubble/chibaifan.jpg", alt: "吃白饭" },
+  { image: "/DSH/assets/pet/bubble/xuanfan.gif", alt: "炫饭" },
+  { image: "/DSH/assets/pet/bubble/fanne.jpg", alt: "饭呢" },
   
 ];
 
@@ -62,7 +62,7 @@ const PET_HOLD_MAX_MS = 20000;         // 停留上限，避免超长 GIF 把泡
         也可以直接改下面这个数组，支持 http(s):// 在线地址。
       ★ 三个文件都不存在时，自动退回内置合成音：高音「唧~」+ 低音「嘟~」。
    ──────────────────────────────────────────────────────────────────────── */
-const PET_SOUND_CANDIDATES = ["/assets/pet/duck.mp3", "/assets/pet/duck.wav", "/assets/pet/duck.ogg"];
+const PET_SOUND_CANDIDATES = ["/DSH/assets/pet/duck.mp3", "/DSH/assets/pet/duck.wav", "/DSH/assets/pet/duck.ogg"];
 
 /* ── ④ 北京时间 + 高峰 / 低峰判定（泡泡第三行）──────────────────────────
       时间来源：后端 /api/time（用 UTC+8 硬算，见 web_app.py），
@@ -278,7 +278,7 @@ const PET_TIME_CACHE_MS = 30000;       // 时间缓存 30 秒
     setBubble(`<img class="pet-bubble-image" src="${escapeHtml(src)}" alt="${escapeHtml(alt || "")}" draggable="false" />`, true);
     bubbleEl.querySelector("img")?.addEventListener("error", () => {
       holdMsPromise = Promise.resolve(PET_MESSAGE_HOLD_MS);
-      setBubble(bubbleLines("图片没找到，检查 web/assets/pet/bubble/ 里的地址"));
+      setBubble(bubbleLines("图片没找到，检查 /DSH/assets/pet/bubble/ 里的地址"));
     });
   }
 
