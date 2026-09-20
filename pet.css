@@ -1,0 +1,214 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   【小宠物 PET + 局部布局微调】样式文件
+   ───────────────────────────────────────────────────────────────────────────
+   ★ 小宠物相关代码只看这 3 个文件就够了：
+       1. web/pet.css   ← 当前文件（宠物 / 泡泡 / 左下角控制器外观）
+       2. web/pet.js    ← 宠物交互逻辑（图片地址、泡泡文案都在这里）
+       3. web/index.html 里有 `id="pet"` 的那一小段结构
+   ★ 宠物图片放置位置： web/assets/pet/pet.png
+       （把图片丢进去就自动显示；没有图片时会显示一个占位小精灵）
+   ★ 注意：对话输入框保持页面原位，本文件不再改动它。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   1. 局部布局微调
+   ───────────────────────────────────────────────────────────────────────── */
+/* 上下文控制器：从右下角移到左下角（输入框已回到页面原位，左下角空出来了） */
+.context-controller {
+  left: 28px;
+  right: auto;
+  bottom: 28px;
+}
+
+/* 收起状态：进度条挪到文字上方，加粗，并与边框留出距离 */
+.context-controller.collapsed .controller-head {
+  padding: 22px 16px 14px;            /* 顶部留出进度条位置 */
+}
+.context-controller.collapsed .controller-progress {
+  display: block;
+  position: absolute;
+  top: 9px;                           /* 与上边框留距离 */
+  left: 14px;                         /* 与左右边框留距离 */
+  right: 14px;
+  bottom: auto;
+  height: 8px;                        /* 原来 4px，加粗一倍方便观察 */
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, .24);
+}
+.context-controller.collapsed .controller-progress i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: 99px;
+  background: var(--gold);
+  transition: width .25s ease;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   2. 小宠物本体（默认停在右下角，可拖动）
+   ───────────────────────────────────────────────────────────────────────── */
+.pet {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 7;
+  width: 112px;
+  height: 112px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  -webkit-user-drag: none;
+}
+.pet:active { cursor: grabbing; }
+
+.pet-body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  /* 从上往下压缩：脚底不动、顶部落下，模拟被摸头 */
+  transform-origin: bottom center;
+  transition: transform .18s cubic-bezier(.34, 1.56, .64, 1);
+  will-change: transform;
+}
+.pet-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;         /* 像素风图片不会被糊掉 */
+  pointer-events: none;
+  filter: drop-shadow(0 10px 14px rgba(72, 54, 42, .26));
+}
+/* 鼠标悬停：轻轻浮起 */
+.pet:hover .pet-body { transform: translateY(-3px); }
+/* 左键按住：从上往下压扁一点（摸头） */
+.pet.is-patting .pet-body {
+  transform: scaleY(.82) scaleX(1.08);
+  transition-duration: .08s;
+}
+/* 拖动中：稍微放大，表示被抓起来了 */
+.pet.is-dragging .pet-body { transform: scale(1.05); }
+
+/* 还没放图片时的占位小精灵（放了 pet.png 后会自动隐藏） */
+.pet-fallback {
+  display: none;
+  position: relative;
+  width: 86%;
+  height: 86%;
+  border: 2px solid rgba(49, 86, 79, .5);
+  border-radius: 50% 50% 46% 46%;
+  background: radial-gradient(circle at 34% 26%, #f7f1e3, #dce7df 62%, #b6cbc0);
+  box-shadow: inset 0 -8px 14px rgba(49, 86, 79, .16), 0 10px 16px rgba(72, 54, 42, .2);
+}
+.pet-fallback::before {   /* 两只眼睛 */
+  content: "";
+  position: absolute;
+  top: 40%;
+  left: 27%;
+  width: 9px;
+  height: 11px;
+  border-radius: 50%;
+  background: #3c4a44;
+  box-shadow: 34px 0 0 #3c4a44;
+}
+.pet-fallback::after {    /* 小嘴 */
+  content: "";
+  position: absolute;
+  top: 58%;
+  left: 50%;
+  width: 16px;
+  height: 8px;
+  margin-left: -8px;
+  border-radius: 0 0 10px 10px;
+  background: rgba(181, 92, 72, .5);
+}
+.pet-body.is-missing .pet-image { display: none; }
+.pet-body.is-missing .pet-fallback { display: grid; place-items: end center; }
+.pet-fallback-hint {
+  margin-bottom: -22px;
+  color: rgba(49, 86, 79, .62);
+  font: 9px ui-monospace, monospace;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   3. 宠物头顶的泡泡：深色半透明椭圆气泡，深蓝色 4px 描边（无尾巴 / 无小气泡）
+   ───────────────────────────────────────────────────────────────────────── */
+.pet-bubble {
+  position: absolute;
+  right: 4px;
+  bottom: calc(100% + 14px);
+  width: max-content;                 /* 宽度自动判定：内容多宽就多宽 */
+  max-width: min(300px, 70vw);
+  padding: 12px 22px;
+  border: 4px solid #245c99;          /* 深蓝色描边（4px） */
+  border-radius: 999px;               /* 椭圆：上下随内容变化，两端始终是圆头 */
+  background: rgba(17, 34, 58, .85);  /* 深色半透明填充 */
+  box-shadow: 0 8px 22px rgba(7, 25, 48, .34);
+  color: #e8f0fb;
+  font: 500 13px/1.55 "Source Han Sans SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-hanhei);     /* 宠物气泡文字用思源黑体（字体栈在 theme.css 顶部） */
+  text-align: center;
+  pointer-events: none;               /* 泡泡不吃鼠标事件 */
+  opacity: 0;
+  transform: translateY(6px) scale(.94);
+  transform-origin: bottom center;
+  transition: opacity .16s ease, transform .16s ease;
+}
+.pet-bubble.is-visible { opacity: 1; transform: translateY(0) scale(1); }
+
+/* 泡泡里放图片 / GIF 时：内边距收紧，圆角收一点，图片自适应 */
+.pet-bubble.has-media {
+  padding: 8px;
+  border-radius: 22px;
+}
+.pet-bubble .pet-bubble-image {
+  display: block;
+  max-width: 150px;
+  max-height: 130px;
+  width: auto;
+  height: auto;
+  border-radius: 14px;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 泡泡里的金额样式：%a 正常大小；%b 更小、更透明 */
+.pet-amount-a {
+  font-size: 1em;
+  font-weight: 700;
+  color: #fff;
+}
+.pet-amount-b {
+  font-size: .76em;                   /* 比 a 小 */
+  opacity: .62;                       /* 透明度降低 */
+  color: #cfdef0;
+}
+
+/* 泡泡第三行的高峰 / 低峰判定 */
+.pet-peak-high {
+  color: #ff8f7d;                     /* 高峰期：亮红（深底上更清晰） */
+  font-weight: 700;
+}
+.pet-peak-low {
+  color: #7fc4ff;                     /* 低峰期：亮蓝色 */
+}
+.pet-peak-wait {
+  color: rgba(232, 240, 251, .6);     /* 时间还没取到时的过渡文案 */
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   4. 窄屏适配
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 780px) {
+  .pet { right: 12px; bottom: 12px; width: 88px; height: 88px; }
+  /* 控制器在左下，宽度收窄些，避免和右下角的宠物重叠 */
+  .context-controller { left: 10px; right: auto; bottom: 10px; width: min(250px, calc(100vw - 120px)); }
+}

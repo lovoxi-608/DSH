@@ -1,0 +1,49 @@
+/* ============================================================
+   小应用预留页（/lab）的外壳样式 —— 只负责顶栏与挂载区。
+   你自己的应用样式请写在 web/assets/lab/app.css（会被 lab.js 动态挂载），
+   不要往这个文件里塞应用样式。
+   浅色外壳：与口琴谱应用的白底 updream 风格保持一致。
+   ============================================================ */
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  display:flex;flex-direction:column;
+  background:#f5f7fa;color:#111827;
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+}
+
+/* ===== 顶栏 ===== */
+.lab-bar{
+  display:flex;align-items:center;gap:12px;flex-shrink:0;
+  padding:10px 16px;border-bottom:1px solid #e5e7eb;
+  background:rgba(255,255,255,0.92);
+  backdrop-filter:blur(10px);
+}
+.lab-btn{
+  height:30px;padding:0 12px;border-radius:8px;cursor:pointer;
+  border:1px solid #d1d5db;background:#fff;
+  color:#374151;font-size:13px;font-family:inherit;
+  transition:border-color .2s,background .2s,color .2s;
+}
+.lab-btn:hover{border-color:#2563eb;color:#1d4ed8;background:#f0f5ff}
+.lab-title{font-size:14px;letter-spacing:.5px;font-weight:600;color:#111827}
+.lab-hint{margin-left:auto;font-size:12px;color:#2563eb;min-height:16px}
+
+/* ===== 挂载区：你的应用占满这里 ===== */
+.lab-mount{flex:1 1 auto;min-height:0;overflow:auto;padding:18px}
+
+/* ===== 空壳占位（应用接上后会被整块替换掉） ===== */
+.lab-placeholder{
+  max-width:760px;margin:6vh auto 0;padding:28px;
+  border:1px dashed #cbd5e1;border-radius:12px;
+  text-align:center;color:#6b7280;line-height:1.8;
+  background:#fff;
+}
+.lab-placeholder h1{margin:0 0 10px;font-size:18px;color:#111827}
+.lab-placeholder p{margin:6px 0}
+.lab-placeholder-sub{font-size:12.5px;opacity:.85}
+.lab-placeholder code{
+  padding:1px 6px;border-radius:5px;background:#f3f4f6;
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#1d4ed8;
+}

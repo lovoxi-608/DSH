@@ -1,0 +1,103 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   聊天不透明度调节页（/tuner）专用样式
+   预览区直接复用 app.css 的真实气泡 / 输入框样式，所以这里只负责页面框架。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* theme.css 把 body 锁成了整屏不可滚动，本页要自己放开 */
+html{height:auto;overflow:auto}
+body.tuner-page{
+  height:auto;min-height:100%;overflow:visible;
+  background:var(--bg-page);
+}
+
+/* ── 顶栏 ─────────────────────────────────────────────────────────────── */
+.tuner-bar{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:12px;
+  height:52px;padding:0 20px;
+  background:var(--bar-bg);border-bottom:1px solid var(--bar-border);
+  backdrop-filter:blur(8px);
+}
+.tuner-back{
+  color:var(--accent);text-decoration:none;font-size:13px;
+  padding:6px 10px;border:1px solid var(--btn-border);border-radius:8px;
+  background:var(--btn-bg);transition:border-color .2s;
+}
+.tuner-back:hover{border-color:var(--accent)}
+.tuner-logo{height:24px;width:auto;max-width:160px;border-radius:6px;user-select:none;-webkit-user-drag:none}
+.tuner-bar-title{
+  font-family:var(--font-serif);font-size:16px;font-weight:700;color:var(--bar-logo);
+}
+.tuner-addr{
+  margin-left:auto;font-size:12px;color:var(--text-secondary);
+  border:1px dashed var(--btn-border);border-radius:99px;padding:3px 10px;
+  user-select:all;
+}
+
+/* ── 主布局：左参数 / 右预览 ─────────────────────────────────────────── */
+.tuner-main{
+  display:grid;grid-template-columns:330px minmax(0,1fr);
+  gap:18px;align-items:start;
+  padding:18px 20px 40px;
+}
+@media (max-width:900px){
+  .tuner-main{grid-template-columns:1fr}
+}
+
+.tuner-controls{
+  background:var(--input-bg);border:1px solid var(--btn-border);
+  border-radius:12px;padding:16px 16px 14px;
+  box-shadow:var(--input-shadow);
+  position:sticky;top:70px;
+}
+.tuner-section-title{
+  font-family:var(--font-serif);font-size:13px;font-weight:700;
+  color:var(--text-primary);letter-spacing:1px;
+  margin:2px 0 12px;
+}
+.tuner-field{display:block;margin-bottom:16px}
+.tuner-field-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+  font-size:13px;color:var(--text-primary);margin-bottom:6px;
+}
+.tuner-field-head output{
+  font-family:ui-monospace,Consolas,monospace;font-size:13px;
+  color:var(--accent);font-weight:700;
+}
+.tuner-field input[type="range"]{width:100%;accent-color:var(--accent);cursor:pointer}
+.tuner-field small{display:block;margin-top:6px;font-size:11.5px;line-height:1.65;color:var(--text-secondary)}
+.tuner-field code,.tuner-note code{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--accent)}
+.tuner-divider{height:1px;background:var(--toolbar-divider);margin:18px 0 16px}
+.tuner-reset{
+  width:100%;height:36px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--btn-border);background:var(--btn-bg);color:var(--btn-text);
+  font-size:13px;font-family:var(--font-sans);transition:all .2s;
+}
+.tuner-reset:hover{border-color:var(--accent);color:var(--accent)}
+.tuner-note{
+  margin-top:12px;font-size:11.5px;line-height:1.7;color:var(--text-secondary);
+}
+
+/* ── 预览区 ───────────────────────────────────────────────────────────── */
+.tuner-preview-head{
+  display:flex;align-items:baseline;justify-content:space-between;
+  font-size:13px;color:var(--text-primary);margin-bottom:8px;
+}
+.tuner-preview-hint{font-size:11.5px;color:var(--text-secondary)}
+.tuner-stage{
+  position:relative;overflow:hidden;min-height:540px;
+  border:1px solid var(--btn-border);border-radius:14px;
+  background:var(--bg-page);
+}
+/* 预览里的背景层与聊天页同款：浓度由 --chat-bg-opacity 控制 */
+.tuner-stage .chat-bg{z-index:1}
+.tuner-chat{
+  position:relative;z-index:2;
+  display:flex;flex-direction:column;gap:10px;
+  padding:26px 22px 22px;
+}
+.tuner-chat .message{margin-bottom:0}
+.tuner-input{margin-top:6px}
+.tuner-input .tb-btn{cursor:default}
+.tuner-tip{margin-top:10px;font-size:11.5px;color:var(--text-secondary)}
+.tuner-tip code{font-family:ui-monospace,Consolas,monospace;color:var(--accent)}

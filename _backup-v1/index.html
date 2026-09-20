@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="jiangnan">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>对话</title>
+  <link rel="stylesheet" href="/app.css" />
+  <link rel="stylesheet" href="/theme.css" />
+  <link rel="stylesheet" href="/pet.css" />
+</head>
+<body>
+  <header class="theme-bar">
+    <div class="theme-logo">对话</div>
+    <div class="theme-switcher" id="themeSwitcher" aria-label="界面主题">
+      <button class="theme-btn active" type="button" data-theme="jiangnan">江南园林</button>
+      <button class="theme-btn" type="button" data-theme="palace">皇家宫廷</button>
+      <button class="theme-btn" type="button" data-theme="huizhou">徽派民居</button>
+      <button class="theme-btn" type="button" data-theme="minnan">闽南古厝</button>
+      <button class="theme-btn" type="button" data-theme="zen">禅意寺院</button>
+    </div>
+    <span id="connectionLabel" class="connection-label">本地工作台</span>
+    <button id="newChat" class="top-new-chat" type="button">+ 新聊天</button>
+  </header>
+
+  <div class="reference-app">
+    <aside class="reference-sidebar">
+      <div class="sidebar-avatar">墨</div>
+      <nav class="reference-nav" aria-label="主导航">
+        <button class="reference-nav-item active" type="button">✎ <span>新聊天</span></button>
+        <button class="reference-nav-item" type="button">▣ <span>上下文控制器</span></button>
+        <button class="reference-nav-item" type="button">▱ <span>空间</span></button>
+      </nav>
+
+      <div class="history-title">过去七天</div>
+      <div id="savedConversation" class="history-list" aria-live="polite">
+        <div class="history-empty">第一次发送后，对话会保存在这里</div>
+      </div>
+      <span id="savedConversationMeta" class="visually-hidden">刚刚保存</span>
+
+      <!-- 上下文控制器：原悬浮面板已经迁移到左侧栏，默认收起时仍显示占用可视化。 -->
+      <section class="sidebar-controller">
+        <div id="contextController" class="context-controller collapsed" aria-label="上下文控制器">
+          <div id="controllerHandle" class="controller-head" title="上下文控制器">
+            <span class="controller-pin">✣</span>
+            <div><span class="kicker">MEMORY POINTER</span><h3>上下文控制器</h3></div>
+            <span id="collapsedPercent" class="controller-percent">0%</span>
+            <button id="toggleController" class="icon-button" type="button" aria-label="展开或收起控制器">+</button>
+            <span class="controller-progress"><i id="collapsedBar"></i></span>
+          </div>
+          <div class="controller-body">
+            <div class="memory-meter"><div class="meter-label"><span>记忆占用</span><strong id="memoryPercent">0%</strong></div><div class="meter"><i id="memoryBar"></i></div></div>
+            <label class="range-label" for="keepRecent">保留最近 <output id="keepRecentValue">8</output> 条消息</label>
+            <input id="keepRecent" type="range" min="2" max="20" value="8" />
+            <button id="compressButton" class="compress-button" type="button">▦ 立即压缩上下文</button>
+            <button id="clearContextButton" class="delete-button" type="button">✕ 清空当前上下文</button>
+            <p id="compressionNote" class="controller-note">压缩会把较早消息整理成摘要，最近对话保持原样。</p>
+          </div>
+        </div>
+      </section>
+      <div class="sidebar-status">
+        <div><span>当前模型</span><strong id="activeModel">读取中</strong></div>
+        <div><span>消息条数</span><strong id="messageCount">0</strong></div>
+      </div>
+
+      <div class="sidebar-bottom">
+        <div class="user-row" id="userRow" role="button" tabindex="0">
+          <span class="user-avatar">客</span><span><strong>墨客·608</strong><small>免费版 · 升级</small></span><b class="user-arrow">⌄</b>
+        </div>
+        <div id="userMenu" class="user-menu">
+          <div class="user-menu-title">界面设置</div>
+          <div class="user-menu-item" data-theme-menu="jiangnan">江南园林</div>
+            <div class="user-menu-item" data-theme-menu="palace">皇家宫廷</div>
+          <div class="user-menu-item" data-theme-menu="huizhou">徽派民居</div>
+          <div class="user-menu-item" data-theme-menu="minnan">闽南古厝</div>
+          <div class="user-menu-item" data-theme-menu="zen">禅意寺院</div>
+          <div class="user-menu-divider"></div>
+          <div class="user-menu-title">输入框背景图</div>
+          <div class="bg-setter">
+            <input id="inputBgInput" type="text" placeholder="/assets/bg/input-bg.png 或网址" />
+            <div class="bg-actions"><button id="inputBgApply" type="button">应用</button><button id="inputBgReset" type="button">恢复默认</button></div>
+            <p class="bg-hint">图片放在 <code>web/assets/bg/</code>，默认地址见 theme.js。</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="reference-main">
+      <div class="main-decor" aria-hidden="true">
+        <div class="garden-wash wash-one"></div><div class="garden-wash wash-two"></div>
+        <div class="roof-line"></div>
+      </div>
+      <button class="download-btn" type="button">↓ 下载</button>
+      <section class="conversation-workspace">
+        <header class="conversation-heading">
+          <span class="kicker">INNER COURTYARD / CONVERSATION</span>
+          <h1>天井会客厅</h1>
+          <span class="live-badge">在席</span>
+        </header>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div class="composer-area">
+          <form id="chatForm" class="composer">
+            <textarea id="messageInput" rows="3" placeholder="有问题可以问，或者输入 @ 来补充背景" aria-label="输入消息"></textarea>
+            <button id="sendButton" class="send-button" type="submit"><span>发送</span><b>↗</b></button>
+          </form>
+          <div class="model-strip"><label for="modelSelect">请 AI 入席</label><select id="modelSelect" aria-label="选择模型"></select><span id="modelHint">正在读取接口能力...</span></div>
+          <div class="composer-foot"><span>墨迹会自动收进当前对话</span><span id="typingState">就绪</span></div>
+        </div>
+        <div class="quick-actions">
+          <button class="qa-btn" type="button" data-action="new-chat">✎ 新聊天</button>
+          <button class="qa-btn" type="button" data-action="compress">▦ 压缩上下文</button>
+          <button class="qa-btn" type="button" data-action="clear">✕ 清空上下文</button>
+          <button class="qa-btn" type="button" data-action="latest">↓ 回到最新</button>
+        </div>
+        <p class="footer-note">本页面使用了 AI，请检查输出内容。</p>
+      </section>
+    </main>
+  </div>
+
+  <!-- 小宠物区域保留原结构与文件，不参与本次主页重构。 -->
+  <div id="pet" class="pet" role="button" tabindex="0" aria-label="小宠物，按住可以摸摸它">
+    <div id="petBubble" class="pet-bubble" aria-live="polite"></div>
+    <div id="petBody" class="pet-body"><img id="petImage" class="pet-image" alt="" draggable="false" /><div class="pet-fallback" aria-hidden="true"><span class="pet-fallback-hint">放 pet.png</span></div></div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script src="/theme.js"></script>
+  <script src="/pet.js"></script>
+</body>
+</html>

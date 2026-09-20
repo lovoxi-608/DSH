@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="jiangnan">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>空间 · 本机文件</title>
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/space.css">
+</head>
+<body class="space-page">
+
+<header class="space-bar">
+  <a class="space-back" href="/">← 回到聊天</a>
+  <img id="spaceLogo" class="space-logo" src="/assets/brand/logo.svg" alt="" draggable="false" />
+  <div class="space-title">空间 <span>· 打开本机文件，位置记下来，下次直接用</span></div>
+  <span class="space-loc" id="spaceLoc" title="当前使用的位置">未选择位置</span>
+</header>
+
+<main class="space-main">
+  <!-- 左：位置管理 -->
+  <section class="space-panel">
+    <div class="space-panel-title">AI 空间（模型可读写）</div>
+    <input id="spaceAiRoot" class="space-input" type="text" spellcheck="false" autocomplete="off"
+           placeholder="粘贴文件夹路径，例如 D:\笔记" />
+    <button id="spaceAiBind" class="space-btn primary" type="button">🔗 绑定给 AI</button>
+    <button id="spaceAiUnbind" class="space-btn ghost" type="button">解除绑定</button>
+    <p class="space-hint" id="spaceAiHint">
+      浏览器拿不到「选择文件夹」的真实路径，所以这里需要<b>手动粘贴一次文件夹路径</b>
+      （在文件资源管理器地址栏复制即可）。绑定后，聊天里的 AI 就能列出、读取、写入这个文件夹，
+      它保存的文件会以卡片出现在对话里。
+    </p>
+
+    <div class="space-panel-title second">本机位置（浏览器直连）</div>
+    <button id="spacePickDir" class="space-btn primary" type="button">📂 选择文件夹</button>
+    <button id="spaceReconnect" class="space-btn primary" type="button" hidden>🔁 重新连接上次位置</button>
+    <button id="spacePickFile" class="space-btn" type="button">📄 打开单个文件</button>
+    <button id="spaceNewFile" class="space-btn" type="button">＋ 新建文本文件</button>
+    <button id="spaceForget" class="space-btn ghost" type="button">忘记这个位置</button>
+    <p class="space-hint" id="spaceHint">
+      选过的文件夹会被浏览器记住（IndexedDB 保存文件句柄），下次打开本页会自动调用同一个位置，<b>不用重新选</b>。
+      浏览器出于安全要在你点一下时才重新授权读写。
+    </p>
+    <div class="space-legend">
+      <span><b>可读文本</b>：.txt .md .json .js .py .css .html .csv .log 等</span>
+      <span><b>图片</b>：png / jpg / gif / webp / svg 可预览、可发送到对话</span>
+      <span><b>写入本机</b>：需要 Chromium 内核（Chrome / Edge / VS Code 内置浏览器）</span>
+      <span><b>拖拽</b>：文件可以直接拖到本页打开</span>
+    </div>
+  </section>
+
+  <!-- 中：文件列表 -->
+  <section class="space-files">
+    <div class="space-files-head">
+      <div class="space-mode" id="spaceMode" role="tablist" aria-label="列表来源">
+        <button class="space-mode-btn is-active" type="button" data-space-mode="local" role="tab">本机</button>
+        <button class="space-mode-btn" type="button" data-space-mode="ai" role="tab">AI 空间</button>
+      </div>
+      <small id="spaceCount">未选择位置</small>
+    </div>
+    <div class="space-file-list" id="spaceFileList">
+      <div class="space-empty">还没有选择位置。点左边的「选择文件夹」，或把文件 / 文件夹直接拖到本页。</div>
+    </div>
+  </section>
+
+  <!-- 右：编辑器 / 预览 -->
+  <section class="space-editor">
+    <div class="space-editor-head">
+      <span class="space-file-name" id="spaceFileName">未打开文件</span>
+      <span class="space-badge" id="spaceFileBadge"></span>
+      <div class="space-editor-actions">
+        <button id="spaceSave" class="space-btn small" type="button" disabled>保存</button>
+        <button id="spaceDownload" class="space-btn small" type="button" disabled>下载副本</button>
+        <button id="spaceSend" class="space-btn small accent" type="button" disabled>发送到对话</button>
+      </div>
+    </div>
+    <div class="space-editor-body">
+      <textarea id="spaceText" spellcheck="false" placeholder="选择左侧文件即可打开：文本可编辑后保存回本机，图片在这里预览。"></textarea>
+      <div class="space-image-wrap" id="spaceImageWrap" hidden>
+        <img id="spaceImagePreview" alt="" />
+      </div>
+    </div>
+    <p class="space-status" id="spaceStatus">就绪</p>
+  </section>
+</main>
+
+<!-- 不支持 File System Access API 时的兜底输入（只能读，不能写回） -->
+<input id="spaceDirInput" type="file" webkitdirectory hidden />
+<input id="spaceFileInput" type="file" multiple hidden />
+
+<script src="/theme.js"></script>
+<script src="/space.js"></script>
+</body>
+</html>

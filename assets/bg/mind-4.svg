@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="l4sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f1ebdf"/><stop offset=".55" stop-color="#dcdcd0"/><stop offset="1" stop-color="#c3d0c4"/>
+    </linearGradient>
+    <linearGradient id="l4a" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8ba091"/><stop offset="1" stop-color="#6a8171"/>
+    </linearGradient>
+    <linearGradient id="l4b" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6c8374"/><stop offset="1" stop-color="#4e6355"/>
+    </linearGradient>
+    <linearGradient id="l4c" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f6553"/><stop offset="1" stop-color="#364738"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#l4sky)"/>
+  <circle cx="300" cy="170" r="52" fill="#f6f1e2" opacity=".9"/>
+  <path d="M0 520 L120 372 L240 470 L400 330 L560 486 L740 356 L920 496 L1080 400 L1200 470 L1200 800 L0 800 Z" fill="url(#l4a)" opacity=".34"/>
+  <path d="M0 616 L160 462 L330 570 L520 424 L730 578 L930 452 L1200 596 L1200 800 L0 800 Z" fill="url(#l4b)" opacity=".38"/>
+  <path d="M0 700 L200 556 L400 654 L620 516 L840 664 L1060 556 L1200 646 L1200 800 L0 800 Z" fill="url(#l4c)" opacity=".42"/>
+  <ellipse cx="200" cy="430" rx="300" ry="34" fill="#ffffff" opacity=".5"/>
+  <ellipse cx="600" cy="520" rx="340" ry="30" fill="#ffffff" opacity=".42"/>
+  <ellipse cx="980" cy="616" rx="300" ry="26" fill="#ffffff" opacity=".32"/>
+</svg>

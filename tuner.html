@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="jiangnan">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>聊天不透明度调节</title>
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/tuner.css">
+</head>
+<body class="tuner-page">
+
+<header class="tuner-bar">
+  <a class="tuner-back" href="/">← 回到聊天</a>
+  <img id="tunerLogo" class="tuner-logo" src="/assets/brand/logo.svg" alt="" draggable="false" />
+  <div class="tuner-bar-title">聊天不透明度调节</div>
+  <code class="tuner-addr" title="这个页面的地址，收藏它随时来调">/tuner</code>
+</header>
+
+<main class="tuner-main">
+  <!-- 左：参数 -->
+  <section class="tuner-controls">
+    <div class="tuner-section-title">面板不透明度</div>
+
+    <label class="tuner-field" for="sliderPanel">
+      <span class="tuner-field-head"><b>助手气泡 / 输入框</b><output id="outPanel">70%</output></span>
+      <input id="sliderPanel" type="range" min="10" max="100" step="1" />
+      <small>越小越透（背景图看得越清楚），越大越实（字越清楚）。对应 CSS 变量 <code>--chat-panel-mix</code>。</small>
+    </label>
+
+    <label class="tuner-field" for="sliderUser">
+      <span class="tuner-field-head"><b>自己的气泡</b><output id="outUser">88%</output></span>
+      <input id="sliderUser" type="range" min="20" max="100" step="1" />
+      <small>主题色气泡保留多少不透明度。对应 <code>--chat-user-mix</code>。</small>
+    </label>
+
+    <div class="tuner-divider"></div>
+    <div class="tuner-section-title">毛玻璃与背景</div>
+
+    <label class="tuner-field" for="sliderBlur">
+      <span class="tuner-field-head"><b>毛玻璃模糊</b><output id="outBlur">8px</output></span>
+      <input id="sliderBlur" type="range" min="0" max="24" step="1" />
+      <small>气泡/输入框后面那层虚化，越大背景越模糊、文字越稳。对应 <code>--chat-panel-blur</code>。</small>
+    </label>
+
+    <label class="tuner-field" for="sliderBg">
+      <span class="tuner-field-head"><b>背景图浓度</b><output id="outBg">62%</output></span>
+      <input id="sliderBg" type="range" min="0" max="100" step="1" />
+      <small>背景图本身的明暗强度。对应 <code>.chat-bg.show</code> 的 <code>--chat-bg-opacity</code>。</small>
+    </label>
+
+    <button id="tunerReset" class="tuner-reset" type="button">恢复默认（70 / 88 / 8px / 62%）</button>
+    <p class="tuner-note">
+      设置立即保存到浏览器（localStorage <code>mogao-tuner-v1</code>），回到聊天页就生效。<br>
+      想改「默认值」（例如换台电脑时的初始值），改 <code>web/tuner-store.js</code> 顶部的 <code>DEFAULTS</code>。
+    </p>
+  </section>
+
+  <!-- 右：实时预览（用的就是聊天页真实样式） -->
+  <section class="tuner-preview">
+    <div class="tuner-preview-head">
+      <span>实时预览</span>
+      <span class="tuner-preview-hint">背景图取当前思考强度档位的图</span>
+    </div>
+    <div class="tuner-stage" id="tunerStage">
+      <div class="chat-bg show" id="tunerBg" aria-hidden="true"></div>
+      <div class="tuner-chat">
+        <article class="message assistant">
+          <span class="message-avatar ai"><img id="tunerAiAvatar" src="/assets/ai/dafeiyu.png" alt=""></span>
+          <div class="bubble"><span class="message-meta">deepseek-flash</span>这是助手气泡的预览。拖动左边的滑块，这里的透明度、模糊度和背景浓度会立刻变化。</div>
+        </article>
+        <article class="message user">
+          <span class="message-avatar" title="预览">608</span>
+          <div class="bubble"><span class="message-meta">608</span>这条是你自己气泡的样子，颜色更深一点，以免白字看不清。</div>
+        </article>
+        <form class="input-frame tuner-input" onsubmit="return false">
+          <textarea class="input-area" rows="2" placeholder="输入框也会一起变透明，背景图会透上来"></textarea>
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <button class="tb-btn" type="button">＋ 附件</button>
+            </div>
+            <div class="toolbar-right">
+              <button class="tb-btn send" type="button" title="发送（预览用，不可点）">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    <p class="tuner-tip">提示：预览里的助手头像取 <code>web/app.js</code> 的 <code>AI_AVATAR_SRC</code>，与聊天页保持一致。</p>
+  </section>
+</main>
+
+<script src="/tuner-store.js"></script>
+<!-- theme.js 只用来复用品牌图常量（BRAND_LOGO_SRC）与主题切换，不涉及聊天逻辑 -->
+<script src="/theme.js"></script>
+<script src="/tuner.js"></script>
+</body>
+</html>

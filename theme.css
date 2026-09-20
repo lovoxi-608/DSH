@@ -1,0 +1,549 @@
+/* ========== 全局重置与变量 ========== */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+/* hidden 属性兜底：组件自带的 display:flex/block 会盖掉 hidden 属性，
+   导致「登录后隐藏 登录/注册 按钮」失效（左下角菜单项、设置弹窗里的按钮都踩过这个坑）。
+   Normalize 也是这么做的，这条必须放在组件样式之前先声明。 */
+[hidden]{display:none !important}
+/* ── 自定义字体 Grasser ──────────────────────────────────────────────
+   把字体文件放进 web/assets/fonts/（文件名用 Grasser.woff2 / Grasser.ttf / Grasser.otf 任一个），
+   页面上的「聊天正文、logo 后面的标题、宠物气泡」就会自动用它。
+   也可以把字体装进系统（家族名 Grasser），local() 那一项会直接命中。
+   文件还没放时自动退回楷体兜底，不会报错。 */
+@font-face{
+  font-family:"Grasser";
+  src:local("Grasser"),
+      url("/assets/fonts/Grasser.woff2") format("woff2"),
+      url("/assets/fonts/Grasser.ttf") format("truetype"),
+      url("/assets/fonts/Grasser.otf") format("opentype");
+  font-display:swap;
+}
+/* ── 思源黑体 ───────────────────────────────────────────────────
+   「logo 后面的文字（左上角两段标题 + 中央一句话）」「宠物头顶气泡」都用它。
+   优先级：系统里的思源黑体 / Source Han Sans SC → 目录里的字体文件 → Noto Sans SC 兜底。
+   想用自定义文件：把字体放到 web/assets/fonts/ 并命名为下面两个名字之一（见该目录 README）。
+   文件没放不会报错：local() 命中就直接用系统字体，否则只是控制台几条 404。 */
+@font-face{
+  font-family:"Source Han Sans SC";
+  src:local("Source Han Sans SC"),
+      local("Source Han Sans CN"),
+      local("思源黑体"),
+      url("/assets/fonts/SourceHanSansSC-Regular.woff2") format("woff2"),
+      url("/assets/fonts/SourceHanSansSC-Regular.otf") format("opentype");
+  font-display:swap;
+}
+:root{
+  --font-serif:'Noto Serif SC',serif;
+  --font-sans:'Noto Sans SC',sans-serif;
+  /* Grasser：聊天正文 / 气泡上的名字 / 「问」菜单 */
+  --font-grasser:"Grasser","楷体",KaiTi,"Kaiti SC","Noto Serif SC",serif;
+  /* 思源黑体：logo 后面的文字 / 宠物气泡（系统没装时会退到 Noto Sans SC，观感几乎一样） */
+  --font-hanhei:"Source Han Sans SC","Source Han Sans CN","思源黑体","Noto Sans CJK SC","Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --sidebar-w:280px;
+  --radius:6px;
+}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:var(--font-sans);
+  background:var(--bg-page);
+  color:var(--text-primary);
+  transition:background .5s ease,color .5s ease;
+}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ========== 顶部标题栏 ========== */
+.theme-bar{
+  position:fixed;top:0;left:0;right:0;height:48px;z-index:100;
+  display:flex;align-items:center;padding:0 20px;gap:8px;
+  background:var(--bar-bg);
+  border-bottom:1px solid var(--bar-border);
+  backdrop-filter:blur(8px);
+}
+.theme-bar .logo{
+  font-family:var(--font-serif);font-size:18px;font-weight:700;
+  color:var(--bar-logo);letter-spacing:2px;
+}
+.theme-bar .logo span{font-size:12px;font-weight:400;opacity:.6;margin-left:6px;letter-spacing:1px}
+/* 左上角品牌图：改高度即可整体缩放 */
+.theme-bar .brand-logo{
+  display:block;height:26px;width:auto;max-width:200px;
+  border-radius:6px;user-select:none;-webkit-user-drag:none;
+}
+/* Logo 后面的两段标题：第一段加粗白字（更大），第二段常规蓝字（更小）。
+   align-items:baseline 让两段文字底部（基线）保持水平，字体大小不同也不会错位。
+   字体用思源黑体（变量见本文件顶部；改字体只改 --font-hanhei 即可）。 */
+.brand-title{
+  display:flex;align-items:baseline;gap:8px;
+  margin-left:10px;line-height:1;user-select:none;white-space:nowrap;
+}
+.brand-title-main{
+  font-family:var(--font-hanhei);font-size:21px;font-weight:700;
+  color:#ffffff;letter-spacing:2px;
+  text-shadow:0 1px 3px rgba(0,0,0,.45);
+}
+.brand-title-sub{
+  font-family:var(--font-hanhei);font-size:12.5px;font-weight:400;
+  color:#4f9bff;letter-spacing:1px;
+}
+
+/* ========== 主布局 ========== */
+.app{display:flex;height:100vh;padding-top:48px}
+
+/* ========== 左侧边栏 ========== */
+.sidebar{
+  width:var(--sidebar-w);min-width:var(--sidebar-w);height:calc(100vh - 48px);
+  background:var(--sidebar-bg);border-right:1px solid var(--sidebar-border);
+  display:flex;flex-direction:column;padding:16px;position:relative;overflow:hidden;
+  transition:background .5s ease,border-color .5s ease;
+}
+/* 侧边栏建筑装饰顶檐 */
+.sidebar::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:8px;
+  background:var(--eave-bg);z-index:1;
+}
+.sidebar-avatar{
+  width:40px;height:40px;border-radius:50%;margin:12px 0 20px;flex-shrink:0;
+  background:var(--avatar-bg);display:flex;align-items:center;justify-content:center;
+  font-family:var(--font-serif);font-size:18px;font-weight:700;color:var(--avatar-text);
+  border:2px solid var(--avatar-border);
+}
+/* 侧边栏圆标里的图片 */
+.sidebar-avatar .brand-mark{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
+.sidebar-nav{display:flex;flex-direction:column;gap:2px;flex-shrink:0}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:0 12px;height:40px;
+  border:none;background:transparent;width:100%;text-align:left;
+  border-radius:var(--radius);font-size:14px;cursor:pointer;font-family:var(--font-sans);
+  color:var(--text-primary);transition:all .25s ease;position:relative;
+}
+.nav-item:hover{background:var(--nav-hover)}
+.nav-item.active{background:var(--nav-active-bg);font-weight:500}
+.nav-item.active::before{
+  content:'';position:absolute;left:-16px;top:0;bottom:0;width:3px;
+  background:var(--accent);border-radius:0 2px 2px 0;
+}
+.nav-item svg{width:18px;height:18px;flex-shrink:0;stroke:var(--nav-icon);fill:none}
+.nav-item.active svg{stroke:var(--accent)}
+.nav-item .ext{margin-left:auto;opacity:.5;font-size:12px}
+.history-group{margin-top:24px;font-size:12px;color:var(--text-secondary);font-weight:600;letter-spacing:1px;flex-shrink:0}
+
+/* ========== 右侧主区 ========== */
+.main{
+  flex:1;height:calc(100vh - 48px);position:relative;
+  display:flex;flex-direction:column;overflow:hidden;
+  transition:background .5s ease;
+}
+/* 主区背景装饰层 */
+.main-decor{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.main-decor svg{position:absolute}
+
+/* 对话工作区：初始居中，开聊后输入框沉底、消息铺满 */
+.conversation-workspace{
+  position:relative;z-index:5;
+  display:flex;flex-direction:column;height:100%;width:100%;
+  padding:0 28px;
+}
+.center-content{
+  width:100%;max-width:760px;margin:auto;
+  display:flex;flex-direction:column;align-items:center;
+  padding:24px 0 8px;
+}
+.conversation-workspace.has-messages .center-content{margin:0 auto;padding:12px 0 0}
+.conversation-workspace.has-messages .center-head{display:none}
+.conversation-workspace.has-messages .center-icon{display:none}
+.conversation-workspace.has-messages .center-slogan{display:none}
+.conversation-workspace.has-messages .quick-actions{display:none}
+
+/* 中央 Logo + 一句话：同一行显示（logo + 文字） */
+.center-head{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  max-width:100%;margin-bottom:20px;padding:0 10px;
+}
+.center-icon{
+  width:34px;height:34px;margin:0;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--center-icon-color);
+}
+.center-icon svg{width:100%;height:100%}
+.center-icon .center-logo{
+  width:100%;height:100%;object-fit:contain;display:block;
+  border-radius:9px;
+  filter:drop-shadow(0 2px 8px rgba(0,0,0,.16));
+  user-select:none;-webkit-user-drag:none;
+}
+.center-slogan{
+  font-family:var(--font-hanhei);font-size:14.5px;letter-spacing:1px;
+  color:var(--text-secondary);margin:0;text-align:left;
+}
+
+/* 输入框 — 窗框/漏窗风格 */
+.input-frame{
+  width:100%;max-width:720px;border-radius:var(--input-radius);
+  background:var(--input-bg);border:var(--input-border);
+  padding:18px 18px 10px;position:relative;
+  box-shadow:var(--input-shadow);
+  transition:all .3s ease;
+}
+.input-frame:focus-within{
+  border-color:var(--accent);
+  box-shadow:var(--input-focus-shadow);
+}
+.input-area{
+  width:100%;border:none;outline:none;background:transparent;resize:none;
+  font-family:var(--font-sans);font-size:16px;color:var(--text-primary);
+  line-height:1.6;min-height:48px;max-height:180px;overflow-y:auto;
+}
+.input-area::placeholder{color:var(--placeholder-color)}
+.input-toolbar{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-top:12px;padding-top:10px;border-top:1px solid var(--toolbar-divider);
+}
+.toolbar-left,.toolbar-right{display:flex;gap:6px;align-items:center}
+.tb-btn{
+  display:flex;align-items:center;gap:5px;height:32px;padding:0 10px;
+  border:1px solid transparent;border-radius:var(--radius);
+  background:transparent;color:var(--tb-btn-color);font-size:13px;cursor:pointer;
+  font-family:var(--font-sans);transition:all .2s;
+  white-space:nowrap;flex-shrink:0;
+}
+.tb-btn:hover{background:var(--tb-btn-hover);border-color:var(--btn-border)}
+.tb-btn svg{width:16px;height:16px}
+.tb-btn.plus{width:32px;padding:0;justify-content:center}
+.tb-btn.send{width:32px;padding:0;justify-content:center;color:var(--accent)}
+.tb-btn.send:hover{background:var(--send-hover)}
+.tb-btn:disabled{opacity:.45;cursor:not-allowed}
+
+/* 快捷按钮行 */
+.quick-actions{
+  display:flex;flex-wrap:wrap;gap:10px;justify-content:center;
+  margin-top:28px;
+}
+.qa-btn{
+  display:flex;align-items:center;gap:6px;height:38px;padding:0 18px;
+  border:1px solid var(--qa-border);border-radius:19px;
+  background:var(--qa-bg);color:var(--qa-text);font-size:14px;cursor:pointer;
+  font-family:var(--font-sans);transition:all .3s ease;
+  position:relative;overflow:hidden;
+}
+.qa-btn:hover{
+  background:var(--qa-hover-bg);border-color:var(--accent);
+  transform:translateY(-1px);
+  box-shadow:var(--qa-hover-shadow);
+}
+.qa-btn svg{width:16px;height:16px}
+
+/* 底部声明 */
+.footer-note{
+  text-align:center;padding:10px 0 14px;
+  font-size:12px;color:var(--text-secondary);z-index:5;
+}
+.footer-note a{color:var(--accent);text-decoration:underline;cursor:pointer}
+
+/* ========== 主题一：江南园林 ========== */
+[data-theme="jiangnan"]{
+  --bg-page:#f0ebe0;
+  --bar-bg:rgba(240,235,224,.92);
+  --bar-border:#d4cdb8;
+  --bar-logo:#3a4a3a;
+  --sidebar-bg:#f5f0e6;
+  --sidebar-border:#d4cdb8;
+  --text-primary:#2c3e2c;
+  --text-secondary:#7a8a7a;
+  --accent:#5a8a6a;
+  --accent-text:#fff;
+  --nav-hover:rgba(90,138,106,.1);
+  --nav-active-bg:rgba(90,138,106,.12);
+  --nav-icon:#7a8a7a;
+  --avatar-bg:#3a4a3a;
+  --avatar-text:#f5f0e6;
+  --avatar-border:#5a8a6a;
+  --user-avatar-bg:#5a8a6a;
+  --btn-bg:#f5f0e6;
+  --btn-border:#c8c0a8;
+  --btn-text:#3a4a3a;
+  --btn-hover-bg:#e8e0cc;
+  --input-bg:#faf7ef;
+  --input-border:2px solid #c8c0a8;
+  --input-radius:10px;
+  --input-shadow:0 2px 12px rgba(58,74,58,.08);
+  --input-focus-shadow:0 0 0 4px rgba(90,138,106,.15),0 2px 12px rgba(58,74,58,.1);
+  --placeholder-color:#9aab9a;
+  --toolbar-divider:#e0d8c0;
+  --tb-btn-color:#6a7a6a;
+  --tb-btn-hover:rgba(90,138,106,.08);
+  --send-hover:rgba(90,138,106,.12);
+  --qa-bg:#faf7ef;
+  --qa-border:#c8c0a8;
+  --qa-text:#3a4a3a;
+  --qa-hover-bg:#f0ebe0;
+  --qa-hover-shadow:0 4px 12px rgba(58,74,58,.12);
+  --center-icon-color:#7a9a7a;
+  --eave-bg:linear-gradient(90deg,#3a4a3a,#5a6a4a,#3a4a3a);
+}
+/* 江南：漏窗角花 */
+[data-theme="jiangnan"] .input-frame::before,
+[data-theme="jiangnan"] .input-frame::after{
+  content:'';position:absolute;width:24px;height:24px;
+  border:2px solid var(--accent);opacity:.4;
+}
+[data-theme="jiangnan"] .input-frame::before{
+  top:-2px;left:-2px;border-right:none;border-bottom:none;border-radius:8px 0 0 0;
+}
+[data-theme="jiangnan"] .input-frame::after{
+  bottom:-2px;right:-2px;border-left:none;border-top:none;border-radius:0 0 8px 0;
+}
+
+/* ========== 主题二：皇家宫廷 ========== */
+[data-theme="palace"]{
+  --bg-page:#f5e6c8;
+  --bar-bg:rgba(140,35,24,.95);
+  --bar-border:#6b1a10;
+  --bar-logo:#e8b840;
+  --sidebar-bg:#faf0d8;
+  --sidebar-border:#c8a860;
+  --text-primary:#3a2010;
+  --text-secondary:#8a6a40;
+  --accent:#b8860b;
+  --accent-text:#fff;
+  --nav-hover:rgba(184,134,11,.12);
+  --nav-active-bg:rgba(184,134,11,.15);
+  --nav-icon:#8a6a40;
+  --avatar-bg:#8c2318;
+  --avatar-text:#e8b840;
+  --avatar-border:#d4a017;
+  --user-avatar-bg:#8c2318;
+  --btn-bg:#faf0d8;
+  --btn-border:#c8a860;
+  --btn-text:#5a3010;
+  --btn-hover-bg:#f0e0b8;
+  --input-bg:#fdf6e3;
+  --input-border:2px solid #c8a860;
+  --input-radius:4px;
+  --input-shadow:0 2px 16px rgba(140,35,24,.1);
+  --input-focus-shadow:0 0 0 4px rgba(184,134,11,.2),0 2px 16px rgba(140,35,24,.15);
+  --placeholder-color:#b8a070;
+  --toolbar-divider:#e0c890;
+  --tb-btn-color:#8a6a40;
+  --tb-btn-hover:rgba(184,134,11,.1);
+  --send-hover:rgba(184,134,11,.15);
+  --qa-bg:#fdf6e3;
+  --qa-border:#c8a860;
+  --qa-text:#5a3010;
+  --qa-hover-bg:#f5e6c8;
+  --qa-hover-shadow:0 4px 16px rgba(140,35,24,.15);
+  --center-icon-color:#b8860b;
+  --eave-bg:linear-gradient(90deg,#8c2318,#d4a017,#8c2318);
+}
+/* 皇家：匾额金边 */
+[data-theme="palace"] .input-frame{
+  border:3px double #c8a860;
+}
+[data-theme="palace"] .qa-btn{
+  border:1px solid #c8a860;
+  background:linear-gradient(180deg,#fdf6e3,#f5e6c8);
+}
+[data-theme="palace"] .qa-btn:hover{
+  background:linear-gradient(180deg,#faf0d8,#f0e0b8);
+  box-shadow:0 4px 16px rgba(184,134,11,.25);
+}
+
+/* ========== 主题三：徽派民居 ========== */
+[data-theme="huizhou"]{
+  --bg-page:#e8e4dc;
+  --bar-bg:rgba(58,58,58,.95);
+  --bar-border:#2a2a2a;
+  --bar-logo:#d0ccc0;
+  --sidebar-bg:#f0ece4;
+  --sidebar-border:#b8b4a8;
+  --text-primary:#2a2a2a;
+  --text-secondary:#7a7a70;
+  --accent:#5a5a50;
+  --accent-text:#fff;
+  --nav-hover:rgba(90,90,80,.1);
+  --nav-active-bg:rgba(90,90,80,.12);
+  --nav-icon:#7a7a70;
+  --avatar-bg:#3a3a3a;
+  --avatar-text:#f0ece4;
+  --avatar-border:#6a6a60;
+  --user-avatar-bg:#5a7a5a;
+  --btn-bg:#f0ece4;
+  --btn-border:#b8b4a8;
+  --btn-text:#3a3a3a;
+  --btn-hover-bg:#e0dcd0;
+  --input-bg:#f5f2ec;
+  --input-border:2px solid #b8b4a8;
+  --input-radius:2px;
+  --input-shadow:0 2px 10px rgba(58,58,58,.08);
+  --input-focus-shadow:0 0 0 4px rgba(90,90,80,.15),0 2px 10px rgba(58,58,58,.1);
+  --placeholder-color:#a0a098;
+  --toolbar-divider:#d0ccc0;
+  --tb-btn-color:#6a6a60;
+  --tb-btn-hover:rgba(90,90,80,.08);
+  --send-hover:rgba(90,90,80,.12);
+  --qa-bg:#f5f2ec;
+  --qa-border:#b8b4a8;
+  --qa-text:#3a3a3a;
+  --qa-hover-bg:#e8e4dc;
+  --qa-hover-shadow:0 4px 12px rgba(58,58,58,.12);
+  --center-icon-color:#7a7a70;
+  --eave-bg:linear-gradient(90deg,#2a2a2a,#4a4a40,#2a2a2a);
+}
+/* 徽派：马头墙剪影在侧边栏 */
+[data-theme="huizhou"] .sidebar::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:60px;
+  background:var(--sidebar-bg);
+  clip-path:polygon(0 100%,0 60%,15% 60%,15% 30%,30% 30%,30% 50%,50% 50%,50% 20%,70% 20%,70% 45%,85% 45%,85% 35%,100% 35%,100% 100%);
+  opacity:.06;pointer-events:none;
+}
+
+/* ========== 主题四：闽南古厝 ========== */
+[data-theme="minnan"]{
+  --bg-page:#f0e0c8;
+  --bar-bg:rgba(181,73,58,.95);
+  --bar-border:#8a3528;
+  --bar-logo:#f0d8a0;
+  --sidebar-bg:#f5e8d0;
+  --sidebar-border:#c89860;
+  --text-primary:#4a2010;
+  --text-secondary:#9a6a40;
+  --accent:#b5493a;
+  --accent-text:#fff;
+  --nav-hover:rgba(181,73,58,.1);
+  --nav-active-bg:rgba(181,73,58,.13);
+  --nav-icon:#9a6a40;
+  --avatar-bg:#b5493a;
+  --avatar-text:#f0d8a0;
+  --avatar-border:#d4a017;
+  --user-avatar-bg:#b5493a;
+  --btn-bg:#f5e8d0;
+  --btn-border:#c89860;
+  --btn-text:#5a2818;
+  --btn-hover-bg:#edd8b8;
+  --input-bg:#faf0dc;
+  --input-border:2px solid #c89860;
+  --input-radius:6px;
+  --input-shadow:0 2px 14px rgba(181,73,58,.1);
+  --input-focus-shadow:0 0 0 4px rgba(181,73,58,.18),0 2px 14px rgba(181,73,58,.15);
+  --placeholder-color:#b89870;
+  --toolbar-divider:#e0c090;
+  --tb-btn-color:#8a6a40;
+  --tb-btn-hover:rgba(181,73,58,.08);
+  --send-hover:rgba(181,73,58,.12);
+  --qa-bg:#faf0dc;
+  --qa-border:#c89860;
+  --qa-text:#5a2818;
+  --qa-hover-bg:#f0e0c8;
+  --qa-hover-shadow:0 4px 14px rgba(181,73,58,.15);
+  --center-icon-color:#b5493a;
+  --eave-bg:linear-gradient(90deg,#8a3528,#d4a017,#8a3528);
+}
+/* 闽南：红砖纹理 */
+[data-theme="minnan"] .main{
+  background-image:
+    repeating-linear-gradient(0deg,transparent,transparent 28px,rgba(181,73,58,.04) 28px,rgba(181,73,58,.04) 30px),
+    repeating-linear-gradient(90deg,transparent,transparent 56px,rgba(181,73,58,.03) 56px,rgba(181,73,58,.03) 58px);
+}
+
+/* ========== 主题五：禅意寺院 ========== */
+[data-theme="zen"]{
+  --bg-page:#ede8dd;
+  --bar-bg:rgba(60,50,40,.92);
+  --bar-border:#3a3028;
+  --bar-logo:#c8b898;
+  --sidebar-bg:#f2ede2;
+  --sidebar-border:#c0b8a0;
+  --text-primary:#3a3028;
+  --text-secondary:#8a7e68;
+  --accent:#6b8e5a;
+  --accent-text:#fff;
+  --nav-hover:rgba(107,142,90,.1);
+  --nav-active-bg:rgba(107,142,90,.12);
+  --nav-icon:#8a7e68;
+  --avatar-bg:#4a3e30;
+  --avatar-text:#d8c8a0;
+  --avatar-border:#8a7e68;
+  --user-avatar-bg:#6b8e5a;
+  --btn-bg:#f2ede2;
+  --btn-border:#c0b8a0;
+  --btn-text:#4a3e30;
+  --btn-hover-bg:#e6dfc8;
+  --input-bg:#f7f3ea;
+  --input-border:1px solid #c0b8a0;
+  --input-radius:8px;
+  --input-shadow:0 1px 8px rgba(60,50,40,.06);
+  --input-focus-shadow:0 0 0 3px rgba(107,142,90,.12),0 1px 8px rgba(60,50,40,.08);
+  --placeholder-color:#a89e88;
+  --toolbar-divider:#d8d0bc;
+  --tb-btn-color:#7a6e58;
+  --tb-btn-hover:rgba(107,142,90,.08);
+  --send-hover:rgba(107,142,90,.12);
+  --qa-bg:#f7f3ea;
+  --qa-border:#c0b8a0;
+  --qa-text:#4a3e30;
+  --qa-hover-bg:#ede8dd;
+  --qa-hover-shadow:0 3px 10px rgba(60,50,40,.1);
+  --center-icon-color:#8a9a78;
+  --eave-bg:linear-gradient(90deg,#3a3028,#5a4a38,#3a3028);
+}
+/* 禅意：枯山水波纹 */
+[data-theme="zen"] .main-decor{
+  background:
+    repeating-radial-gradient(circle at 85% 80%,transparent 0,transparent 18px,rgba(107,142,90,.05) 18px,rgba(107,142,90,.05) 20px);
+}
+
+/* ========== 各主题装饰 SVG 显隐 ========== */
+.decor-jiangnan,.decor-palace,.decor-huizhou,.decor-minnan,.decor-zen{display:none}
+[data-theme="jiangnan"] .decor-jiangnan{display:block}
+[data-theme="palace"] .decor-palace{display:block}
+[data-theme="huizhou"] .decor-huizhou{display:block}
+[data-theme="minnan"] .decor-minnan{display:block}
+[data-theme="zen"] .decor-zen{display:block}
+
+/* ========== 用户行与弹出菜单 ========== */
+.user-row{
+  display:flex;align-items:center;gap:10px;padding:8px 4px;
+  cursor:pointer;border-radius:8px;transition:background .2s;padding-right:8px;
+}
+.user-row:hover{background:var(--nav-hover)}
+.user-avatar{
+  width:28px;height:28px;border-radius:50%;background:var(--user-avatar-bg);
+  display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;
+}
+.user-info .name{font-size:14px;font-weight:600}
+.user-info .sub{font-size:12px;color:var(--text-secondary)}
+.user-info .sub a{color:var(--accent);text-decoration:none}
+.user-row .arrow{margin-left:auto;width:14px;height:14px;stroke:var(--text-secondary);transition:transform .2s}
+.user-row.open .arrow{transform:rotate(180deg)}
+.user-menu{
+  position:absolute;bottom:70px;left:12px;width:230px;
+  background:var(--sidebar-bg);border:1px solid var(--sidebar-border);
+  border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.15);
+  padding:6px 0;z-index:60;display:none;
+  animation:menuFadeIn .2s ease;
+}
+@keyframes menuFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.user-menu.show{display:block}
+.user-menu-title{
+  font-size:11px;color:var(--text-secondary);padding:10px 16px 6px;
+  letter-spacing:1.5px;font-weight:600;font-family:var(--font-serif);
+}
+.user-menu-item{
+  display:flex;align-items:center;gap:10px;padding:0 16px;height:38px;
+  font-size:13.5px;color:var(--text-primary);cursor:pointer;transition:background .15s;
+}
+.user-menu-item:hover{background:var(--nav-hover)}
+.user-menu-item .theme-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;border:1px solid rgba(0,0,0,.1)}
+.user-menu-item .check{margin-left:auto;color:var(--accent);font-size:14px;font-weight:700;opacity:0}
+.user-menu-item.active .check{opacity:1}
+.user-menu-item.active{color:var(--accent);font-weight:500}
+.user-menu-divider{height:1px;background:var(--sidebar-border);margin:6px 12px}
+.user-menu-item .icon{width:16px;height:16px;stroke:var(--text-secondary);flex-shrink:0;fill:none}
+.user-menu-item:hover .icon{stroke:var(--accent)}
+.user-menu-item.danger{color:#c0392b}
+.user-menu-item.danger .icon{stroke:#c0392b}
+
+/* ========== 响应式 ========== */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .theme-bar .logo span{display:none}
+  .qa-btn{padding:0 14px;font-size:13px}
+}

@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小应用</title>
+<!-- 预留页样式（只负责顶栏 + 挂载区，你的应用自带样式请放 web/assets/lab/app.css） -->
+<link rel="stylesheet" href="lab.css">
+<link rel="stylesheet" href="auth.css">
+</head>
+<body>
+
+<!-- 顶栏：返回聊天（替换当前页回 /），标题与小提示由 lab.js 更新 -->
+<header class="lab-bar">
+  <button id="labBack" class="lab-btn" type="button" title="回到聊天页（当前页替换）">← 返回聊天</button>
+  <strong id="labTitle" class="lab-title">小应用</strong>
+  <span id="labHint" class="lab-hint"></span>
+</header>
+
+<!-- ★★★ 你的新应用会挂在这里（唯一挂载点，id 固定，别改名） ★★★
+     接法：把三件套放进 web/assets/lab/ —— app.html / app.css / app.js，
+     路径不一样就改 web/lab.js 顶部 LAB_APP 的三个地址；
+     完整接口说明 + 给下一个 AI 的提示词：web/lab/README.md -->
+<main id="labMount" class="lab-mount">
+  <div class="lab-placeholder">
+    <h1>新应用预留位</h1>
+    <p>现在是空壳页。写好后把 <code>web/assets/lab/app.html</code>、<code>app.css</code>、<code>app.js</code>
+      放进去，刷新本页就会自动接上（不用改后端路由）。</p>
+    <p class="lab-placeholder-sub">接口：<code>window.LabHost</code>（mount / api / hint / setTitle / go / onReady）· 细节见 <code>web/lab/README.md</code></p>
+  </div>
+</main>
+
+<!-- 登录 / 注册弹窗 -->
+<div class="auth-mask" id="authMask" aria-hidden="true">
+  <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <button class="auth-close" id="authClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-logo">updream</div>
+    <h2 class="auth-title" id="authTitle">欢迎回来</h2>
+    <p class="auth-subtitle" id="authSubtitle">登录后，导航栏会显示你的头像和名字</p>
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab is-active" type="button" data-auth-tab="register">手机号注册</button>
+      <button class="auth-tab" type="button" data-auth-tab="login">手机号登录</button>
+    </div>
+    <form class="auth-form" id="authForm" novalidate>
+      <label class="auth-field"><span class="auth-label">手机号</span>
+        <input id="authPhone" class="auth-input" type="tel" inputmode="numeric" maxlength="11" placeholder="请输入 11 位手机号" autocomplete="tel" /></label>
+      <label class="auth-field" data-register-only><span class="auth-label">验证码</span>
+        <span class="auth-code-row"><input id="authCode" class="auth-input" type="text" inputmode="numeric" maxlength="6" placeholder="6 位验证码" /><button id="authSendCode" class="auth-code-btn" type="button">获取验证码</button></span></label>
+      <label class="auth-field"><span class="auth-label">密码</span>
+        <input id="authPassword" class="auth-input" type="password" maxlength="32" placeholder="至少 6 位" autocomplete="current-password" /></label>
+      <label class="auth-field" data-register-only><span class="auth-label">昵称</span>
+        <input id="authName" class="auth-input" type="text" maxlength="16" placeholder="显示在导航栏的名字（可留空）" /></label>
+      <p class="auth-note" id="authNote" role="status"></p>
+      <button class="auth-submit" id="authSubmit" type="submit">注册并登录</button>
+    </form>
+    <div class="auth-divider"><span>或</span></div>
+    <button class="auth-wechat" id="authWechat" type="button">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.7 4C4.9 4 1.8 6.6 1.8 9.8c0 1.8 1 3.4 2.6 4.5l-.7 2 2.3-1.2c.8.2 1.6.3 2.4.3h.5a5.6 5.6 0 0 1-.2-1.5c0-3.1 3-5.6 6.7-5.6h.6C15.4 5.7 12.4 4 8.7 4Zm-2.3 3.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm4.6 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/><path d="M22.2 14c0-2.7-2.7-4.9-5.9-4.9s-5.9 2.2-5.9 4.9 2.7 4.9 5.9 4.9c.7 0 1.4-.1 2-.3l1.9 1-.5-1.7c1.5-.9 2.5-2.3 2.5-3.9Zm-7.8-1.6a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6Zm3.9 0a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6Z"/></svg>
+      微信登录
+    </button>
+    <p class="auth-tip" id="authWechatTip">检测中…</p>
+  </div>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="auth-mask" id="settingsMask" aria-hidden="true">
+  <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <button class="auth-close" id="settingsClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-logo">updream</div>
+    <h2 class="auth-title" id="settingsTitle">设置</h2>
+    <p class="auth-subtitle">管理个人信息与登录方式</p>
+
+    <section class="settings-section">
+      <div class="settings-section-title">个人信息</div>
+      <div class="settings-profile">
+        <div class="auth-account-avatar" id="profileAvatar"></div>
+        <div>
+          <div class="auth-account-name" id="profileName">未登录</div>
+          <div class="auth-account-phone" id="profilePhone">登录后可设置头像与昵称</div>
+        </div>
+      </div>
+      <label class="auth-field">
+        <span class="auth-label">昵称</span>
+        <input id="profileNameInput" class="auth-input" type="text" maxlength="16" placeholder="显示在导航栏的名字" disabled />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">头像</span>
+        <span class="auth-upload-row">
+          <input id="profileAvatarFile" type="file" accept="image/*" hidden />
+          <button class="auth-code-btn" id="profileAvatarBtn" type="button" disabled>选择图片</button>
+          <button class="auth-code-btn ghost" id="profileAvatarClear" type="button" disabled>恢复默认</button>
+        </span>
+      </label>
+      <p class="auth-note" id="profileNote" role="status"></p>
+      <button class="auth-submit" id="profileSave" type="button" disabled>保存个人信息</button>
+    </section>
+
+    <div class="settings-divider"></div>
+
+    <section class="settings-section">
+      <div class="settings-section-title">账号与登录</div>
+      <p class="settings-state" id="accountState">当前未登录</p>
+      <button class="auth-submit" id="settingsLogin" type="button">登录 / 注册</button>
+      <button class="auth-logout" id="settingsLogout" type="button" hidden>退出登录</button>
+    </section>
+
+    <div class="settings-divider"></div>
+
+    <section class="settings-section hk-admin-zone" id="hkAdminZone" hidden>
+      <div class="settings-section-title">管理员</div>
+      <p class="settings-state" id="hkAdminRoleText">—</p>
+      <div class="hk-admin-ctrl">
+        <button class="auth-code-btn" id="hkAdminAddBtn2" type="button">＋ 添加管理员</button>
+        <button class="auth-code-btn ghost" id="hkAdminListBtn2" type="button">⚙ 管理</button>
+      </div>
+      <div class="hk-admin-add" id="hkAdminAddBox2" hidden>
+        <input id="hkAdminPhone2" class="auth-input" type="text" maxlength="11" placeholder="11 位手机号" />
+        <div class="auth-upload-row">
+          <button class="auth-code-btn" id="hkAdminAddOk2" type="button">确认添加</button>
+          <button class="auth-code-btn ghost" id="hkAdminAddCancel2" type="button">取消</button>
+        </div>
+      </div>
+      <div class="hk-admin-list" id="hkAdminListBox2" hidden>
+        <p class="settings-state">次级管理员</p>
+        <div id="hkAdminList2"></div>
+      </div>
+      <div class="hk-admin-add" id="hkAdminPinBox" hidden>
+        <label class="auth-field">
+          <span class="auth-label">管理员口令</span>
+          <input id="hkAdminPin" class="auth-input" type="password" maxlength="20" placeholder="至少 6 位" />
+        </label>
+        <div class="auth-upload-row">
+          <button class="auth-code-btn" id="hkAdminPinBtn" type="button">确定</button>
+        </div>
+        <p class="auth-note" id="hkAdminPinHint" role="status"></p>
+      </div>
+      <p class="auth-note" id="hkAdminNote2" role="status"></p>
+    </section>
+    <section class="settings-section hk-cloud-zone" id="hkCloudZone" hidden>
+      <div class="settings-section-title">云同步（曲谱库服务器存储）</div>
+      <p class="settings-state">配置 GitHub 仓库后，上传 / 删除曲谱会自动推送到服务器，打开乐谱库自动拉取。Token 仅保存在本机浏览器。</p>
+      <label class="auth-field">
+        <span class="auth-label">GitHub Token</span>
+        <input id="hkCloudToken" class="auth-input" type="password" placeholder="ghp_xxxxxxxx" />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">仓库</span>
+        <input id="hkCloudRepo" class="auth-input" type="text" placeholder="用户名/仓库名" />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">分支</span>
+        <input id="hkCloudBranch" class="auth-input" type="text" value="main" />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">存储路径</span>
+        <input id="hkCloudPath" class="auth-input" type="text" value="updream-data/scores.json" />
+      </label>
+      <div class="hk-admin-ctrl">
+        <button class="auth-code-btn" id="hkCloudSaveBtn" type="button">保存配置</button>
+        <button class="auth-code-btn ghost" id="hkCloudTestBtn" type="button">测试连接</button>
+        <button class="auth-code-btn ghost" id="hkCloudPushBtn" type="button">立即推送</button>
+        <button class="auth-code-btn ghost" id="hkCloudPullBtn" type="button">立即拉取</button>
+      </div>
+      <p class="auth-note" id="hkCloudNote" role="status">未配置</p>
+    </section>
+  </div>
+</div>
+
+<script src="auth.js"></script>
+<script src="lab.js"></script>
+</body>
+</html>

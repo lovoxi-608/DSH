@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="jiangnan">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSH大骚货频道</title>
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/pet.css">
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+
+<!-- ===== 顶部标题栏 ===== -->
+<div class="theme-bar">
+  <!-- 左上角 Logo：换成自己的图片 → 改 web/theme.js 顶部的 BRAND_LOGO_SRC（详见 web/assets/brand/README.md） -->
+  <img id="brandLogo" class="brand-logo" src="/assets/brand/logo.svg" alt="" draggable="false" />
+  <!-- Logo 后面的两段标题：第一段加粗白字更大，第二段常规蓝字更小，两段文字底部对齐（基线对齐）。
+       改文案直接改这两行即可。 -->
+  <div class="brand-title" aria-label="deepseek">
+    <span class="brand-title-main">deep</span><span class="brand-title-sub">seek</span>
+  </div>
+</div>
+
+<div class="app">
+  <!-- ===== 左侧边栏 ===== -->
+  <aside class="sidebar">
+    <!-- 左侧圆标：换成自己的图片 → 改 web/theme.js 顶部的 BRAND_MARK_SRC（详见 web/assets/brand/README.md） -->
+    <div class="sidebar-avatar"><img id="brandMark" class="brand-mark" src="/assets/brand/logo.svg" alt="DSH" draggable="false" /></div>
+
+    <nav class="sidebar-nav" aria-label="主导航">
+      <button class="nav-item" type="button" id="navNewChat">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        新聊天
+      </button>
+      <button class="nav-item" type="button" id="navController" aria-expanded="false" aria-controls="contextController">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.4L12 15l-1.9-4.6L5.5 9l4.6-1.4z"/><path d="M19 15l.95 2.3L22 18l-2.05.7L19 21l-.95-2.3L16 18l2.05-.7z"/></svg>
+        上下文控制器
+        <!-- 占用率改成圈形进度条，鼠标移上去才显示百分比（数字由 app.js 更新） -->
+        <span class="ring-badge nav-ring" id="navControllerRing" role="img" aria-label="上下文占用 0%" data-tip="0%">
+          <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="ring-track" cx="18" cy="18" r="15"></circle><circle class="ring-bar" id="navRingBar" cx="18" cy="18" r="15"></circle></svg>
+        </span>
+      </button>
+      <button class="nav-item" type="button" id="navSpace">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        空间
+      </button>
+      <!-- 预留的小应用页入口：点击 = location.href="/lab"（替换当前页，不新开标签）。
+           新应用的接入点全在 web/lab.js（顶部 LAB_APP）与 web/assets/lab/，详见 web/lab/README.md -->
+      <button class="nav-item" type="button" id="navLab" title="打开预留的小应用页（当前页替换）">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+        小应用
+      </button>
+    </nav>
+
+    <div class="history-group">会话</div>
+    <div id="savedConversation" class="history-list" aria-live="polite">
+      <div class="history-empty">第一次发送后，对话会保存在这里</div>
+    </div>
+    <span id="savedConversationMeta" class="visually-hidden">等待第一段对话</span>
+
+    <!-- 上下文控制器：收起时仍显示记忆占用可视化 -->
+    <section id="contextController" class="context-controller collapsed" aria-label="上下文控制器">
+      <div id="controllerHandle" class="controller-head" title="上下文控制器">
+        <span class="controller-pin">✣</span>
+        <div class="controller-title">
+          <span class="kicker">MEMORY POINTER</span>
+          <h3>上下文控制器</h3>
+        </div>
+        <!-- 同样是圈形进度条：悬停显示百分比 -->
+        <span class="ring-badge controller-ring" id="collapsedPercent" role="img" aria-label="上下文占用 0%" data-tip="0%">
+          <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="ring-track" cx="18" cy="18" r="15"></circle><circle class="ring-bar" id="collapsedRingBar" cx="18" cy="18" r="15"></circle></svg>
+        </span>
+        <button id="toggleController" class="icon-button" type="button" aria-label="展开或收起控制器">+</button>
+        <span class="controller-progress"><i id="collapsedBar"></i></span>
+      </div>
+      <div class="controller-body">
+        <div class="memory-meter">
+          <div class="meter-label"><span>记忆占用</span><strong id="memoryPercent">0%</strong></div>
+          <div class="meter"><i id="memoryBar"></i></div>
+        </div>
+        <label class="range-label" for="keepRecent">保留最近 <output id="keepRecentValue">8</output> 条消息</label>
+        <input id="keepRecent" type="range" min="2" max="20" value="8" />
+        <button id="compressButton" class="compress-button" type="button">▦ 立即压缩上下文</button>
+        <button id="clearContextButton" class="delete-button" type="button">✕ 清空当前上下文</button>
+        <p id="compressionNote" class="controller-note">压缩会把较早消息整理成摘要，最近对话保持原样。</p>
+      </div>
+    </section>
+
+    <div class="sidebar-status">
+      <div><span>接口状态</span><strong id="connectionLabel">读取中</strong></div>
+      <div><span>当前模型</span><strong id="activeModel">读取中</strong></div>
+      <div><span>消息条数</span><strong id="messageCount">0</strong></div>
+    </div>
+
+    <div class="sidebar-bottom">
+      <div class="user-row" id="userRow" role="button" tabindex="0">
+        <div class="user-avatar" id="userAvatar" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div class="user-info">
+          <div class="name" id="userName">未登录</div>
+          <div class="sub" id="userSub">点击登录 / 注册</div>
+        </div>
+        <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div class="user-menu" id="userMenu">
+        <div class="user-menu-title">界面风格</div>
+        <div class="user-menu-item" data-theme-menu="jiangnan"><span class="theme-dot" style="background:#5a8a6a"></span>江南园林<span class="check">✓</span></div>
+        <div class="user-menu-item" data-theme-menu="palace"><span class="theme-dot" style="background:#b8860b"></span>皇家宫廷<span class="check">✓</span></div>
+        <div class="user-menu-item" data-theme-menu="huizhou"><span class="theme-dot" style="background:#5a5a50"></span>徽派民居<span class="check">✓</span></div>
+        <div class="user-menu-item" data-theme-menu="minnan"><span class="theme-dot" style="background:#b5493a"></span>闽南古厝<span class="check">✓</span></div>
+        <div class="user-menu-item" data-theme-menu="zen"><span class="theme-dot" style="background:#6b8e5a"></span>禅意寺院<span class="check">✓</span></div>
+        <div class="user-menu-divider"></div>
+        <div class="user-menu-item" data-menu-url="/tuner" title="打开 /tuner 页面，自己调聊天气泡和输入框的不透明度">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M3 12h18" opacity=".5"/></svg>
+          聊天透明度调节
+        </div>
+        <div class="user-menu-divider"></div>
+        <div class="user-menu-item" data-menu-action="个人设置">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          个人设置
+        </div>
+        <div class="user-menu-item" data-menu-action="登录 / 注册" id="menuLoginItem">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          登录 / 注册
+        </div>
+        <div class="user-menu-item" data-menu-action="消息通知">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          消息通知
+        </div>
+        <div class="user-menu-divider"></div>
+        <div class="user-menu-item" data-menu-action="帮助与反馈">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          帮助与反馈
+        </div>
+        <div class="user-menu-item danger" data-menu-action="退出登录">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          退出登录
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ===== 右侧主区：整区为对话框 ===== -->
+  <main class="main">
+    <div class="main-decor" aria-hidden="true">
+      <!-- 江南园林：竹子 + 水波纹 + 假山 -->
+      <svg class="decor-jiangnan" style="left:20px;bottom:0;width:120px;height:300px;opacity:.15" viewBox="0 0 120 300" fill="none">
+        <path d="M30 300 L30 20 Q30 10 40 10 Q50 10 50 20 L50 300" stroke="#5a8a6a" stroke-width="3"/>
+        <path d="M30 80 L50 80" stroke="#5a8a6a" stroke-width="2"/>
+        <path d="M30 140 L50 140" stroke="#5a8a6a" stroke-width="2"/>
+        <path d="M30 200 L50 200" stroke="#5a8a6a" stroke-width="2"/>
+        <path d="M50 60 Q70 50 80 30 Q75 55 55 65" fill="#5a8a6a" opacity=".6"/>
+        <path d="M50 120 Q75 110 90 90 Q80 115 55 125" fill="#5a8a6a" opacity=".6"/>
+        <path d="M30 180 Q10 170 0 150 Q5 175 25 185" fill="#5a8a6a" opacity=".6"/>
+        <path d="M80 300 L80 60 Q80 50 90 50 Q100 50 100 60 L100 300" stroke="#5a8a6a" stroke-width="2.5"/>
+        <path d="M80 100 L100 100" stroke="#5a8a6a" stroke-width="1.5"/>
+        <path d="M80 170 L100 170" stroke="#5a8a6a" stroke-width="1.5"/>
+        <path d="M100 90 Q115 80 120 60 Q115 85 102 95" fill="#5a8a6a" opacity=".5"/>
+      </svg>
+      <svg class="decor-jiangnan" style="right:40px;bottom:10px;width:200px;height:60px;opacity:.12" viewBox="0 0 200 60" fill="none">
+        <path d="M0 30 Q25 20 50 30 Q75 40 100 30 Q125 20 150 30 Q175 40 200 30" stroke="#7ba7c4" stroke-width="1.5" fill="none"/>
+        <path d="M0 42 Q25 32 50 42 Q75 52 100 42 Q125 32 150 42 Q175 52 200 42" stroke="#7ba7c4" stroke-width="1" fill="none"/>
+        <path d="M0 52 Q25 44 50 52 Q75 60 100 52 Q125 44 150 52 Q175 60 200 52" stroke="#7ba7c4" stroke-width="1" fill="none" opacity=".6"/>
+      </svg>
+      <svg class="decor-jiangnan" style="right:60px;bottom:50px;width:100px;height:80px;opacity:.1" viewBox="0 0 100 80" fill="#5a6a5a">
+        <path d="M10 80 Q5 60 20 50 Q15 35 35 30 Q40 15 55 20 Q70 10 80 25 Q95 30 90 50 Q95 65 85 80 Z"/>
+      </svg>
+
+      <!-- 皇家宫廷：云龙纹 + 角花 -->
+      <svg class="decor-palace" style="left:30px;top:60px;width:160px;height:160px;opacity:.08" viewBox="0 0 160 160" fill="none">
+        <circle cx="80" cy="80" r="70" stroke="#b8860b" stroke-width="2"/>
+        <path d="M40 80 Q50 50 80 50 Q110 50 120 80 Q110 110 80 110 Q50 110 40 80" stroke="#b8860b" stroke-width="1.5" fill="none"/>
+        <path d="M55 80 Q62 62 80 62 Q98 62 105 80 Q98 98 80 98 Q62 98 55 80" stroke="#b8860b" stroke-width="1" fill="none"/>
+        <path d="M80 30 L80 45 M80 115 L80 130 M30 80 L45 80 M115 80 L130 80" stroke="#b8860b" stroke-width="2"/>
+      </svg>
+      <svg class="decor-palace" style="right:30px;top:60px;width:160px;height:160px;opacity:.08" viewBox="0 0 160 160" fill="none">
+        <circle cx="80" cy="80" r="70" stroke="#b8860b" stroke-width="2"/>
+        <path d="M40 80 Q50 50 80 50 Q110 50 120 80 Q110 110 80 110 Q50 110 40 80" stroke="#b8860b" stroke-width="1.5" fill="none"/>
+        <path d="M80 30 L80 45 M80 115 L80 130 M30 80 L45 80 M115 80 L130 80" stroke="#b8860b" stroke-width="2"/>
+      </svg>
+      <svg class="decor-palace" style="left:0;top:48px;width:80px;height:80px;opacity:.15" viewBox="0 0 80 80" fill="none">
+        <path d="M0 0 L80 0 L80 10 L10 10 L10 80 L0 80 Z" fill="#8c2318"/>
+        <path d="M20 20 Q40 20 40 40 Q40 20 60 20 Q60 40 40 40 Q60 40 60 60 Q40 60 40 40 Q40 60 20 60 Q20 40 40 40 Q20 40 20 20" fill="#d4a017" opacity=".5"/>
+      </svg>
+
+      <!-- 徽派民居：水墨晕染 + 马头墙 -->
+      <svg class="decor-huizhou" style="right:0;top:48px;width:300px;height:200px;opacity:.06" viewBox="0 0 300 200">
+        <ellipse cx="200" cy="80" rx="120" ry="60" fill="#3a3a3a"/>
+        <ellipse cx="250" cy="120" rx="80" ry="40" fill="#3a3a3a" opacity=".7"/>
+      </svg>
+      <svg class="decor-huizhou" style="left:0;bottom:0;width:100%;height:40px;opacity:.08" viewBox="0 0 800 40" preserveAspectRatio="none">
+        <path d="M0 40 L0 25 L60 25 L60 10 L120 10 L120 20 L200 20 L200 5 L280 5 L280 18 L360 18 L360 12 L440 12 L440 22 L520 22 L520 8 L600 8 L600 20 L680 20 L680 15 L760 15 L760 25 L800 25 L800 40 Z" fill="#2a2a2a"/>
+      </svg>
+
+      <!-- 闽南古厝：燕尾脊 + 剪粘花 -->
+      <svg class="decor-minnan" style="left:50%;top:48px;transform:translateX(-50%);width:400px;height:50px;opacity:.12" viewBox="0 0 400 50" fill="none">
+        <path d="M0 50 Q20 40 30 20 Q40 35 60 30 L340 30 Q360 35 370 20 Q380 40 400 50" stroke="#8a3528" stroke-width="3" fill="none"/>
+        <path d="M60 30 L340 30 L335 38 L65 38 Z" fill="#b5493a" opacity=".5"/>
+        <path d="M180 30 Q200 15 220 30" stroke="#d4a017" stroke-width="2" fill="none"/>
+      </svg>
+      <svg class="decor-minnan" style="right:40px;bottom:60px;width:80px;height:80px;opacity:.15" viewBox="0 0 80 80">
+        <circle cx="40" cy="40" r="30" fill="none" stroke="#d4a017" stroke-width="2"/>
+        <path d="M40 15 L45 35 L65 40 L45 45 L40 65 L35 45 L15 40 L35 35 Z" fill="#b5493a" opacity=".6"/>
+        <circle cx="40" cy="40" r="8" fill="#d4a017"/>
+      </svg>
+
+      <!-- 禅意寺院：石灯笼 + 竹影 -->
+      <svg class="decor-zen" style="left:30px;bottom:30px;width:80px;height:160px;opacity:.12" viewBox="0 0 80 160" fill="#4a3e30">
+        <rect x="30" y="140" width="20" height="15" rx="2"/>
+        <rect x="25" y="125" width="30" height="8" rx="1"/>
+        <rect x="28" y="80" width="24" height="45" rx="2"/>
+        <rect x="22" y="70" width="36" height="10" rx="2"/>
+        <path d="M18 70 L40 45 L62 70 Z"/>
+        <rect x="36" y="35" width="8" height="12" rx="1"/>
+        <circle cx="40" cy="28" r="6"/>
+      </svg>
+      <svg class="decor-zen" style="right:20px;top:60px;width:100px;height:250px;opacity:.1" viewBox="0 0 100 250" fill="none">
+        <path d="M50 250 L50 20" stroke="#6b8e5a" stroke-width="3"/>
+        <path d="M50 70 L50 75 M50 130 L50 135 M50 190 L50 195" stroke="#6b8e5a" stroke-width="2"/>
+        <path d="M50 50 Q70 40 85 20 Q78 45 55 55" fill="#6b8e5a" opacity=".5"/>
+        <path d="M50 110 Q30 100 15 80 Q22 105 45 115" fill="#6b8e5a" opacity=".5"/>
+        <path d="M50 170 Q75 160 90 140 Q82 165 55 175" fill="#6b8e5a" opacity=".5"/>
+      </svg>
+    </div>
+
+    <!-- 聊天背景层：由「思考强度」档位决定图片（需开启右侧开关） -->
+    <div class="chat-bg" id="chatBg" aria-hidden="true"></div>
+
+    <!-- 拖拽文件到页面任意位置时出现的提示层（app.js 控制 .main 上的 drop-active） -->
+    <div class="drop-overlay" id="dropOverlay" aria-hidden="true">
+      <div class="drop-card">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <strong>松开即可添加文件</strong>
+        <span>文本会读成附件内容，图片会生成小预览</span>
+      </div>
+    </div>
+
+    <section class="conversation-workspace" id="conversationWorkspace">
+      <!-- 对话消息流（有消息后铺满右侧） -->
+      <div id="messages" class="messages" aria-live="polite"></div>
+
+      <!-- 输入区：初始居中，开聊后沉入底部 -->
+      <div class="center-content" id="centerContent">
+        <!-- 小 logo + 一句话同排显示（logo + 文字），图片地址跟左上角同一个常量 BRAND_LOGO_SRC -->
+        <div class="center-head">
+          <div class="center-icon">
+            <img id="centerLogo" class="center-logo" src="/assets/brand/logo.svg" alt="" draggable="false" />
+          </div>
+          <p class="center-slogan">咕嘎高松灯</p>
+        </div>
+
+        <form id="chatForm" class="input-frame">
+          <!-- 拖进来的文件 / 图片会变成这里的「附件小卡片」，发送时一起带给模型 -->
+          <div id="attachList" class="attach-list" hidden></div>
+          <textarea id="messageInput" class="input-area" rows="2" placeholder="有问题可以问，也可以把文件或图片拖进来" aria-label="输入消息"></textarea>
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <!-- 「问」：点开是随机日常问题，点一条只会填进输入框，不会自动发送（逻辑在 app.js 的 setupAskMenu） -->
+              <button class="tb-btn" type="button" id="askButton" aria-haspopup="true" aria-expanded="false" aria-controls="askMenu" title="随机日常问题">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                问 <span style="font-size:10px">▾</span>
+              </button>
+              <!-- 随机问题菜单（内容由 app.js 生成，默认收起） -->
+              <div class="ask-menu" id="askMenu" role="menu" hidden></div>
+              <button class="tb-btn" type="button" id="repoButton" title="选择要保存到本机的文件夹（默认保存位置）">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h20"/><path d="M4 20V8l8-5 8 5v12"/><path d="M9 20v-6h6v6"/></svg>
+                所有存储库 <span id="repoName" class="repo-name"></span> <span style="font-size:10px">▾</span>
+              </button>
+              <button class="tb-btn plus" type="button" id="attachButton" title="添加文件 / 图片（也可以直接拖进输入框）">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              </button>
+              <!-- 「＋」和拖拽共用的隐藏文件选择框 -->
+              <input id="attachInput" type="file" multiple hidden />
+            </div>
+            <div class="toolbar-right">
+              <!-- 思考强度：只保留一条可拖动的条，放在模型选择左边（真实作用于模型的 thinking / reasoning_effort / max_tokens） -->
+              <div class="mind-inline">
+                <input id="mindRange" class="mind-range" type="range" min="1" max="5" step="1" value="3"
+                       aria-label="思考强度" title="思考强度（拖动即可真实调整模型的思考长度与 token 消耗）" />
+              </div>
+              <select id="modelSelect" class="model-select" aria-label="选择模型" title="选择聊天模型"></select>
+              <button class="tb-btn" type="button" id="scrollLatestBtn" title="回到最新">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              </button>
+              <button id="sendButton" class="tb-btn send" type="submit" title="发送">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <div class="quick-actions">
+          <button class="qa-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 18 6-6-6-6"/><path d="m16 18 6-6-6-6" opacity=".5"/></svg>
+            调试
+          </button>
+          <button class="qa-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>
+            △口琴
+          </button>
+          <button class="qa-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" stroke-dasharray="4 3"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            创建问题
+          </button>
+          <button class="qa-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            编写代码 <span style="font-size:10px">▾</span>
+          </button>
+          <button class="qa-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M18 9V6a2 2 0 0 0-2-2H8"/><path d="M6 15v3a2 2 0 0 0 2 2h8"/></svg>
+            Git <span style="font-size:10px">▾</span>
+          </button>
+          <button class="qa-btn" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
+            拉取请求 <span style="font-size:10px">▾</span>
+          </button>
+        </div>
+      </div>
+
+      <p class="footer-note">执行情况<span id="typingState" class="typing-state">就绪</span></p>
+    </section>
+  </main>
+</div>
+
+<!-- 登录 / 注册弹窗 -->
+<div class="auth-mask" id="authMask" aria-hidden="true">
+  <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <button class="auth-close" id="authClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-logo">大肥鱼频道</div>
+    <h2 class="auth-title" id="authTitle">欢迎回来</h2>
+    <p class="auth-subtitle" id="authSubtitle">登录后，左下角会显示你的头像和名字</p>
+
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab is-active" type="button" data-auth-tab="register">手机号注册</button>
+      <button class="auth-tab" type="button" data-auth-tab="login">手机号登录</button>
+    </div>
+
+    <form class="auth-form" id="authForm" novalidate>
+      <label class="auth-field">
+        <span class="auth-label">手机号</span>
+        <input id="authPhone" class="auth-input" type="tel" inputmode="numeric" maxlength="11" placeholder="请输入 11 位手机号" autocomplete="tel" />
+      </label>
+
+      <label class="auth-field" data-register-only>
+        <span class="auth-label">验证码</span>
+        <span class="auth-code-row">
+          <input id="authCode" class="auth-input" type="text" inputmode="numeric" maxlength="6" placeholder="6 位验证码" />
+          <button id="authSendCode" class="auth-code-btn" type="button">获取验证码</button>
+        </span>
+      </label>
+
+      <label class="auth-field">
+        <span class="auth-label">密码</span>
+        <input id="authPassword" class="auth-input" type="password" maxlength="32" placeholder="至少 6 位" autocomplete="current-password" />
+      </label>
+
+      <label class="auth-field" data-register-only>
+        <span class="auth-label">昵称</span>
+        <input id="authName" class="auth-input" type="text" maxlength="16" placeholder="显示在左下角的名字（可留空）" />
+      </label>
+
+      <p class="auth-note" id="authNote" role="status"></p>
+      <button class="auth-submit" id="authSubmit" type="submit">注册并登录</button>
+    </form>
+
+    <div class="auth-divider"><span>或</span></div>
+    <button class="auth-wechat" id="authWechat" type="button">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.7 4C4.9 4 1.8 6.6 1.8 9.8c0 1.8 1 3.4 2.6 4.5l-.7 2 2.3-1.2c.8.2 1.6.3 2.4.3h.5a5.6 5.6 0 0 1-.2-1.5c0-3.1 3-5.6 6.7-5.6h.6C15.4 5.7 12.4 4 8.7 4Zm-2.3 3.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm4.6 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/><path d="M22.2 14c0-2.7-2.7-4.9-5.9-4.9s-5.9 2.2-5.9 4.9 2.7 4.9 5.9 4.9c.7 0 1.4-.1 2-.3l1.9 1-.5-1.7c1.5-.9 2.5-2.3 2.5-3.9Zm-7.8-1.6a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6Zm3.9 0a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6Z"/></svg>
+      微信登录
+    </button>
+    <p class="auth-tip" id="authWechatTip">检测中…</p>
+  </div>
+</div>
+
+<!-- 设置弹窗：个人信息在账号与登录上面 -->
+<div class="auth-mask" id="settingsMask" aria-hidden="true">
+  <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <button class="auth-close" id="settingsClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-logo">大肥鱼频道</div>
+    <h2 class="auth-title" id="settingsTitle">设置</h2>
+    <p class="auth-subtitle">管理个人信息与登录方式</p>
+
+    <!-- ① 个人信息 -->
+    <section class="settings-section">
+      <div class="settings-section-title">个人信息</div>
+      <div class="settings-profile">
+        <div class="auth-account-avatar" id="profileAvatar"></div>
+        <div>
+          <div class="auth-account-name" id="profileName">未登录</div>
+          <div class="auth-account-phone" id="profilePhone">登录后可设置头像与昵称</div>
+        </div>
+      </div>
+      <label class="auth-field">
+        <span class="auth-label">昵称</span>
+        <input id="profileNameInput" class="auth-input" type="text" maxlength="16" placeholder="显示在左下角的名字" disabled />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">头像</span>
+        <span class="auth-upload-row">
+          <input id="profileAvatarFile" type="file" accept="image/*" hidden />
+          <button class="auth-code-btn" id="profileAvatarBtn" type="button" disabled>选择图片</button>
+          <button class="auth-code-btn ghost" id="profileAvatarClear" type="button" disabled>恢复默认</button>
+        </span>
+      </label>
+      <p class="auth-note" id="profileNote" role="status"></p>
+      <button class="auth-submit" id="profileSave" type="button" disabled>保存个人信息</button>
+    </section>
+
+    <div class="settings-divider"></div>
+
+    <!-- ② 账号与登录 -->
+    <section class="settings-section">
+      <div class="settings-section-title">账号与登录</div>
+      <p class="settings-state" id="accountState">当前未登录</p>
+      <button class="auth-submit" id="settingsLogin" type="button">登录 / 注册</button>
+      <button class="auth-logout" id="settingsLogout" type="button" hidden>退出登录</button>
+    </section>
+
+    <div class="settings-divider"></div>
+
+    <!-- ③ 思考强度与背景（输入框里只留一条可拖动的条，其余细节放这里） -->
+    <section class="settings-section">
+      <div class="settings-section-title">思考强度与背景</div>
+      <p class="settings-state" id="mindSettingState">当前：均衡</p>
+      <div class="mind-nodes" id="mindNodes" aria-label="思考强度档位"></div>
+      <label class="mind-switch" title="开启后，切换档位会同时把聊天背景换成该档位的图片">
+        <input type="checkbox" id="mindBgToggle" />
+        <span class="mind-switch-track" aria-hidden="true"><i></i></span>
+        <span class="mind-switch-text">背景随思考强度更换</span>
+      </label>
+      <p class="mind-usage" id="mindUsage">档位越高思维链越长，消耗的 token 与费用越多。</p>
+    </section>
+  </div>
+</div>
+
+<!-- 小宠物（点击互动） -->
+<div id="pet" class="pet" role="button" tabindex="0" aria-label="小宠物，鼠标悬停查看余额和今日使用金额，点击可以和它说话">
+  <div id="petBubble" class="pet-bubble" aria-live="polite"></div>
+  <div id="petBody" class="pet-body"><img id="petImage" class="pet-image" alt="" draggable="false" /><div class="pet-fallback" aria-hidden="true"><span class="pet-fallback-hint">放 pet.png</span></div></div>
+</div>
+
+<!-- 不透明度调节的读写都在 tuner-store.js（页面地址 /tuner），必须先于其他脚本加载 -->
+<script src="/tuner-store.js"></script>
+<script src="/app.js"></script>
+<script src="/theme.js"></script>
+<script src="/auth.js"></script>
+<script src="/pet.js"></script>
+</body>
+</html>

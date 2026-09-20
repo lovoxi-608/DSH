@@ -1,0 +1,166 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   空间页（/space）样式：打开 / 编辑 / 保存本机文件
+   ───────────────────────────────────────────────────────────────────────────
+   复用 theme.css 的五主题变量，整页跟随当前主题。
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* theme.css 锁了整屏不滚动，本页放开 */
+html{height:auto;overflow:auto}
+body.space-page{height:auto;min-height:100%;overflow:visible;background:var(--bg-page)}
+
+/* ── 顶栏 ─────────────────────────────────────────────────────────────── */
+.space-bar{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:12px;
+  height:52px;padding:0 20px;
+  background:var(--bar-bg);border-bottom:1px solid var(--bar-border);
+  backdrop-filter:blur(8px);
+}
+.space-back{
+  color:var(--accent);text-decoration:none;font-size:13px;
+  padding:6px 10px;border:1px solid var(--btn-border);border-radius:8px;
+  background:var(--btn-bg);transition:border-color .2s;
+}
+.space-back:hover{border-color:var(--accent)}
+.space-logo{height:24px;width:auto;max-width:160px;border-radius:6px;user-select:none;-webkit-user-drag:none}
+.space-title{font-family:var(--font-serif);font-size:16px;font-weight:700;color:var(--bar-logo)}
+.space-title span{font-size:12px;font-weight:400;opacity:.75;margin-left:6px}
+.space-loc{
+  margin-left:auto;font-size:12px;color:var(--text-secondary);
+  border:1px dashed var(--btn-border);border-radius:99px;padding:3px 10px;
+  max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* ── 三栏：位置 / 列表 / 编辑器 ──────────────────────────────────────── */
+.space-main{
+  display:grid;grid-template-columns:250px 280px minmax(0,1fr);
+  gap:16px;align-items:start;
+  padding:18px 20px 40px;
+}
+@media (max-width:1100px){.space-main{grid-template-columns:1fr 1fr}.space-editor{grid-column:1 / -1}}
+@media (max-width:720px){.space-main{grid-template-columns:1fr}.space-editor{grid-column:auto}}
+
+.space-panel,.space-files,.space-editor{
+  background:var(--input-bg);border:1px solid var(--btn-border);border-radius:12px;
+  box-shadow:var(--input-shadow);
+}
+.space-panel{padding:14px;position:sticky;top:70px}
+.space-panel-title{
+  font-family:var(--font-serif);font-size:13px;font-weight:700;color:var(--text-primary);
+  letter-spacing:1px;margin:2px 0 12px;
+}
+/* AI 空间：路径输入框 + 绑定按钮（AI 空间区与「本机位置」区分隔） */
+.space-panel-title.second{
+  margin-top:18px;padding-top:14px;border-top:1px dashed var(--btn-border);
+}
+.space-input{
+  width:100%;height:36px;margin-bottom:8px;padding:0 10px;
+  border:1px solid var(--btn-border);border-radius:8px;
+  background:var(--bg-page);color:var(--text-primary);
+  font-family:var(--font-sans);font-size:12.5px;
+}
+.space-input::placeholder{color:var(--text-secondary)}
+.space-input:focus{outline:none;border-color:var(--accent)}
+/* 文件列表头部的「本机 / AI 空间」切换 */
+.space-mode{display:flex;gap:4px;background:var(--nav-hover);border-radius:8px;padding:2px}
+.space-mode-btn{
+  border:none;background:transparent;color:var(--text-secondary);
+  border-radius:6px;padding:4px 10px;cursor:pointer;
+  font-family:var(--font-sans);font-size:12px;transition:all .2s;
+}
+.space-mode-btn.is-active{background:var(--input-bg);color:var(--accent);font-weight:600;box-shadow:var(--input-shadow)}
+.space-btn{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  width:100%;height:38px;margin-bottom:8px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--btn-border);background:var(--btn-bg);color:var(--btn-text);
+  font-size:13.5px;font-family:var(--font-sans);transition:all .2s;
+}
+.space-btn:hover{border-color:var(--accent);color:var(--accent)}
+.space-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.space-btn.primary:hover{filter:brightness(1.06);color:var(--accent-text)}
+.space-btn.ghost{background:transparent;color:var(--text-secondary)}
+.space-btn.small{width:auto;height:30px;padding:0 12px;margin:0;font-size:12.5px}
+.space-btn.accent{color:var(--accent);border-color:var(--accent)}
+.space-btn:disabled{opacity:.45;cursor:not-allowed}
+.space-hint{margin:10px 0 0;font-size:11.5px;line-height:1.7;color:var(--text-secondary)}
+.space-hint b{color:var(--text-primary)}
+.space-legend{
+  margin-top:12px;padding-top:10px;border-top:1px dashed var(--btn-border);
+  display:flex;flex-direction:column;gap:5px;
+  font-size:11.5px;line-height:1.6;color:var(--text-secondary);
+}
+.space-legend b{color:var(--accent);font-weight:600}
+
+/* ── 文件列表 ─────────────────────────────────────────────────────────── */
+.space-files{padding:14px;position:sticky;top:70px}
+.space-files-head{
+  display:flex;align-items:baseline;justify-content:space-between;
+  font-size:13px;color:var(--text-primary);margin-bottom:10px;
+}
+.space-files-head small{font-size:11px;color:var(--text-secondary);font-weight:400}
+.space-file-list{
+  display:flex;flex-direction:column;gap:2px;
+  max-height:calc(100vh - 190px);overflow-y:auto;
+  margin-right:-6px;padding-right:6px;
+}
+.space-file-list::-webkit-scrollbar{width:6px}
+.space-file-list::-webkit-scrollbar-thumb{background:var(--btn-border);border-radius:3px}
+.space-empty{padding:8px 4px;font-size:12.5px;line-height:1.7;color:var(--text-secondary)}
+.space-file{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:7px 9px;border:1px solid transparent;border-radius:8px;
+  background:transparent;color:var(--text-primary);
+  font-family:var(--font-sans);font-size:13px;cursor:pointer;
+  transition:background .2s,border-color .2s;
+}
+.space-file:hover{background:var(--nav-hover)}
+.space-file.active{background:var(--nav-active-bg);border-color:var(--btn-border)}
+.space-file .f-icon{flex-shrink:0;width:18px;text-align:center;opacity:.85}
+.space-file .f-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.space-file .f-size{flex-shrink:0;font-size:11px;color:var(--text-secondary)}
+.space-file.is-dir .f-name{font-weight:600}
+
+/* ── 编辑器 / 预览 ────────────────────────────────────────────────────── */
+.space-editor{padding:14px;display:flex;flex-direction:column;min-height:520px}
+.space-editor-head{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding-bottom:10px;border-bottom:1px solid var(--toolbar-divider);margin-bottom:10px;
+}
+.space-file-name{
+  font-size:14px;font-weight:600;color:var(--text-primary);
+  max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.space-badge{font-size:11px;color:var(--text-secondary)}
+.space-editor-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.space-editor-body{position:relative;flex:1;display:flex;min-height:360px}
+#spaceText{
+  width:100%;flex:1;min-height:360px;resize:vertical;
+  border:1px solid var(--btn-border);border-radius:10px;
+  background:var(--bg-page);color:var(--text-primary);
+  font-family:ui-monospace,Consolas,"Courier New",monospace;
+  font-size:13px;line-height:1.7;padding:12px 14px;outline:none;
+}
+#spaceText:focus{border-color:var(--accent)}
+.space-image-wrap{
+  flex:1;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--btn-border);border-radius:10px;background:var(--bg-page);
+  padding:10px;overflow:auto;
+}
+.space-image-wrap img{max-width:100%;max-height:60vh;border-radius:8px}
+.space-status{
+  margin-top:10px;font-size:12px;color:var(--text-secondary);
+  min-height:18px;line-height:1.6;
+}
+.space-status.is-error{color:#c0392b}
+.space-status.is-ok{color:var(--accent)}
+
+/* 拖拽高亮 */
+body.space-dragging::after{
+  content:'松开：直接把文件打开（文件夹会成为当前位置）';
+  position:fixed;inset:0;z-index:60;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;color:var(--accent-text);
+  background:rgba(0,0,0,.35);
+  border:3px dashed var(--accent);
+  pointer-events:none;
+}

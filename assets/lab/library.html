@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>乐谱库 · updream 口琴谱</title>
+<link rel="stylesheet" href="app.css?v=20260917p">
+<link rel="stylesheet" href="../../auth.css">
+</head>
+<body class="hk-standalone">
+<div class="hk-app hk-page">
+
+  <header class="hk-nav">
+    <a class="hk-logo" title="updream">
+      <svg class="hk-logo-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+        <defs>
+          <linearGradient id="hkLogoGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#0ea5e9"/>
+          </linearGradient>
+        </defs>
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="url(#hkLogoGrad)"/>
+        <path d="M16 6c-4 6-6 9-6 13a6 6 0 0 0 12 0c0-2-1-3-1-3" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+        <path d="M20 7.5l1.6 1.6M21.6 5.9l.5 2.6 2.6.5-2.6.5-.5 2.6-.5-2.6-2.6-.5 2.6-.5z" fill="#fbbf24"/>
+      </svg>
+      <span class="hk-logo-text">updream</span>
+    </a>
+    <nav class="hk-nav-links" aria-label="主导航">
+      <a href="../../lab.html">旋律练习</a>
+      <a href="library.html" class="is-active">乐谱库</a>
+    </nav>
+    <button class="hk-admin-gear" id="hkAdminGear" type="button" title="管理员" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    <a class="hk-login" id="hkLogin" title="登录后显示昵称"><span class="hk-login-dot"></span><span id="hkLoginText">登录</span></a>
+    <div class="hk-user-pop" id="hkUserPop" hidden>
+      <div class="hk-user-pop-head">
+        <i class="hk-avatar-mini" id="hkPopAvatar"></i>
+        <div><b id="hkPopName">用户</b><small id="hkPopPhone"></small></div>
+      </div>
+      <button class="hk-user-pop-item" id="hkPopSettings" type="button"><svg class="hk-pop-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>个人设置</button>
+      <button class="hk-user-pop-item hk-user-pop-out" id="hkPopLogout" type="button"><svg class="hk-pop-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>退出登录</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="hk-lib-statusbar">
+      <span class="hk-dot-live">CLOUD LIBRARY / STORAGE READY</span>
+      <span id="hkStoreHint">本地存储</span>
+    </div>
+
+    <section class="hk-card">
+      <div class="hk-lib-hero">
+        <div class="hk-lib-hero-text">
+          <div class="hk-kicker-2">PUBLIC LIBRARY</div>
+          <h1>公开曲谱库</h1>
+          <p>发现新曲谱，或看看最近上传的口琴改编作品。点击卡片查看详情、试听与下载。</p>
+        </div>
+      </div>
+    </section>
+    <div class="hk-lib-sticky" id="hkStickyBar">
+      <input class="hk-lib-search" id="hkSearch" type="search" placeholder="搜索曲名 / 原作者 / 投稿者 / 标签">
+      <div class="hk-lib-toolbar">
+        <button class="hk-btn hk-btn-ghost" id="hkFavsBtn" type="button" title="只看我收藏的曲子">♡ 我的收藏</button>
+        <select class="hk-select" id="hkSort" aria-label="排序方式">
+          <option value="new">最新发布</option>
+          <option value="notes">音符最多</option>
+          <option value="downloads">最多下载</option>
+          <option value="likes">最多点赞</option>
+        </select>
+        <button class="hk-btn hk-btn-primary" id="hkUploadBtn" type="button">↑ 上传曲谱</button>
+      </div>
+    </div>
+
+    <section class="hk-lib-list" id="hkList"></section>
+  </main>
+
+  <div class="hk-modal-mask" id="hkAdminMask">
+  <div class="hk-modal" style="width:360px" role="dialog" aria-modal="true" aria-labelledby="hkAdminTitle">
+    <div class="hk-modal-head">
+      <div><h2 id="hkAdminTitle">管理员面板</h2><p id="hkAdminRole">最高管理员</p></div>
+      <button class="hk-modal-x" id="hkAdminClose" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="hk-admin-body">
+      <div class="hk-admin-ctrl">
+        <button class="hk-btn hk-btn-primary" id="hkAdminAddBtn" type="button">＋ 添加管理员</button>
+        <button class="hk-btn hk-btn-ghost" id="hkAdminListBtn" type="button">⚙ 管理</button>
+      </div>
+      <div class="hk-admin-add" id="hkAdminAddBox" hidden>
+        <div class="hk-field"><span>输入手机号添加为次级管理员</span>
+          <input type="text" id="hkAdminPhone" maxlength="11" placeholder="11 位手机号"></div>
+        <div class="hk-modal-actions">
+          <button class="hk-btn hk-btn-ghost" id="hkAdminAddCancel" type="button">取消</button>
+          <button class="hk-btn hk-btn-primary" id="hkAdminAddOk" type="button">确认添加</button>
+        </div>
+      </div>
+      <div class="hk-admin-list" id="hkAdminListBox" hidden>
+        <p class="hk-admin-list-title">次级管理员</p>
+        <div id="hkAdminList"></div>
+      </div>
+      <p class="hk-admin-note" id="hkAdminNote"></p>
+    </div>
+  </div>
+</div>
+
+<footer class="hk-footer">
+    <p>updream · 口琴谱 · 曲谱保存在浏览器本地存储（localStorage），静态部署无需服务器</p>
+  </footer>
+</div>
+
+<!-- 上传弹窗 -->
+<div class="hk-modal-mask" id="hkUploadMask">
+  <div class="hk-modal" role="dialog" aria-modal="true" aria-labelledby="hkUploadTitle">
+    <div class="hk-modal-head">
+      <div>
+        <h2 id="hkUploadTitle">上传曲谱到乐谱库</h2>
+        <p>支持 .mid / .midi 与两种 txt 谱面，解析在本地完成。</p>
+      </div>
+      <button class="hk-modal-x" id="hkUploadClose" type="button" aria-label="关闭">×</button>
+    </div>
+
+    <div class="hk-field">
+      <span>选择文件（MIDI / txt）</span>
+      <input type="file" id="hkUploadFile" accept=".mid,.midi,.txt,audio/midi,audio/x-midi,text/plain">
+    </div>
+    <div class="hk-upload-preview" id="hkUploadPreview" hidden></div>
+
+    <div class="hk-field">
+      <span>作品名称</span>
+      <input type="text" id="hkUpTitle" maxlength="40" placeholder="例如：前前前世">
+    </div>
+    <div class="hk-field">
+      <span>原作者 / 出处</span>
+      <input type="text" id="hkUpComposer" maxlength="40" placeholder="例如：RADWIMPS / 你的名字。">
+    </div>
+    <div class="hk-field">
+      <span>标签（可多选）</span>
+      <div class="hk-tag-picker" id="hkTagPicker"></div>
+    </div>
+    <div class="hk-field">
+      <span>自定义标签（回车添加）</span>
+      <input type="text" id="hkUpCustomTag" maxlength="8" placeholder="输入新标签后按回车">
+    </div>
+
+    <div class="hk-modal-actions">
+      <button class="hk-btn hk-btn-ghost" id="hkUploadCancel" type="button">取消</button>
+      <button class="hk-btn hk-btn-primary" id="hkUploadSubmit" type="button" disabled>发布到曲谱库</button>
+    </div>
+  </div>
+</div>
+
+<script>/* 静态打开（file://）时把 /lab 导航修正为相对路径 */
+(function(){ if (location.protocol === "file:") {
+  document.querySelectorAll("a[href^=\"/lab\"]").forEach(function(a){
+    var h = a.getAttribute("href");
+    var rel = "../../lab.html" + (h.indexOf("#") >= 0 ? h.slice(h.indexOf("#")) : "");
+    a.setAttribute("href", rel);
+  });
+} })();</script>
+<!-- 登录 / 注册弹窗 -->
+<div class="auth-mask" id="authMask" aria-hidden="true">
+  <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+    <button class="auth-close" id="authClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-logo">updream</div>
+    <h2 class="auth-title" id="authTitle">欢迎回来</h2>
+    <p class="auth-subtitle" id="authSubtitle">登录后，导航栏会显示你的头像和名字</p>
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab is-active" type="button" data-auth-tab="register">手机号注册</button>
+      <button class="auth-tab" type="button" data-auth-tab="login">手机号登录</button>
+    </div>
+    <form class="auth-form" id="authForm" novalidate>
+      <label class="auth-field"><span class="auth-label">手机号</span>
+        <input id="authPhone" class="auth-input" type="tel" inputmode="numeric" maxlength="11" placeholder="请输入 11 位手机号" autocomplete="tel" /></label>
+      <label class="auth-field" data-register-only><span class="auth-label">验证码</span>
+        <span class="auth-code-row"><input id="authCode" class="auth-input" type="text" inputmode="numeric" maxlength="6" placeholder="6 位验证码" /><button id="authSendCode" class="auth-code-btn" type="button">获取验证码</button></span></label>
+      <label class="auth-field"><span class="auth-label">密码</span>
+        <input id="authPassword" class="auth-input" type="password" maxlength="32" placeholder="至少 6 位" autocomplete="current-password" /></label>
+      <label class="auth-field" data-register-only><span class="auth-label">昵称</span>
+        <input id="authName" class="auth-input" type="text" maxlength="16" placeholder="显示在导航栏的名字（可留空）" /></label>
+      <p class="auth-note" id="authNote" role="status"></p>
+      <button class="auth-submit" id="authSubmit" type="submit">注册并登录</button>
+    </form>
+    <div class="auth-divider"><span>或</span></div>
+    <button class="auth-wechat" id="authWechat" type="button">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.7 4C4.9 4 1.8 6.6 1.8 9.8c0 1.8 1 3.4 2.6 4.5l-.7 2 2.3-1.2c.8.2 1.6.3 2.4.3h.5a5.6 5.6 0 0 1-.2-1.5c0-3.1 3-5.6 6.7-5.6h.6C15.4 5.7 12.4 4 8.7 4Zm-2.3 3.4a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm4.6 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Z"/><path d="M22.2 14c0-2.7-2.7-4.9-5.9-4.9s-5.9 2.2-5.9 4.9 2.7 4.9 5.9 4.9c.7 0 1.4-.1 2-.3l1.9 1-.5-1.7c1.5-.9 2.5-2.3 2.5-3.9Zm-7.8-1.6a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6Zm3.9 0a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6Z"/></svg>
+      微信登录
+    </button>
+    <p class="auth-tip" id="authWechatTip">检测中…</p>
+  </div>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="auth-mask" id="settingsMask" aria-hidden="true">
+  <div class="auth-card" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <button class="auth-close" id="settingsClose" type="button" aria-label="关闭">×</button>
+    <div class="auth-logo">updream</div>
+    <h2 class="auth-title" id="settingsTitle">设置</h2>
+    <p class="auth-subtitle">管理个人信息与登录方式</p>
+
+    <section class="settings-section">
+      <div class="settings-section-title">个人信息</div>
+      <div class="settings-profile">
+        <div class="auth-account-avatar" id="profileAvatar"></div>
+        <div>
+          <div class="auth-account-name" id="profileName">未登录</div>
+          <div class="auth-account-phone" id="profilePhone">登录后可设置头像与昵称</div>
+        </div>
+      </div>
+      <label class="auth-field">
+        <span class="auth-label">昵称</span>
+        <input id="profileNameInput" class="auth-input" type="text" maxlength="16" placeholder="显示在导航栏的名字" disabled />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">头像</span>
+        <span class="auth-upload-row">
+          <input id="profileAvatarFile" type="file" accept="image/*" hidden />
+          <button class="auth-code-btn" id="profileAvatarBtn" type="button" disabled>选择图片</button>
+          <button class="auth-code-btn ghost" id="profileAvatarClear" type="button" disabled>恢复默认</button>
+        </span>
+      </label>
+      <p class="auth-note" id="profileNote" role="status"></p>
+      <button class="auth-submit" id="profileSave" type="button" disabled>保存个人信息</button>
+    </section>
+
+    <div class="settings-divider"></div>
+
+    <section class="settings-section">
+      <div class="settings-section-title">账号与登录</div>
+      <p class="settings-state" id="accountState">当前未登录</p>
+      <button class="auth-submit" id="settingsLogin" type="button">登录 / 注册</button>
+      <button class="auth-logout" id="settingsLogout" type="button" hidden>退出登录</button>
+    </section>
+
+    <div class="settings-divider"></div>
+
+    <section class="settings-section hk-admin-zone" id="hkAdminZone" hidden>
+      <div class="settings-section-title">管理员</div>
+      <p class="settings-state" id="hkAdminRoleText">—</p>
+      <div class="hk-admin-ctrl">
+        <button class="auth-code-btn" id="hkAdminAddBtn2" type="button">＋ 添加管理员</button>
+        <button class="auth-code-btn ghost" id="hkAdminListBtn2" type="button">⚙ 管理</button>
+      </div>
+      <div class="hk-admin-add" id="hkAdminAddBox2" hidden>
+        <input id="hkAdminPhone2" class="auth-input" type="text" maxlength="11" placeholder="11 位手机号" />
+        <div class="auth-upload-row">
+          <button class="auth-code-btn" id="hkAdminAddOk2" type="button">确认添加</button>
+          <button class="auth-code-btn ghost" id="hkAdminAddCancel2" type="button">取消</button>
+        </div>
+      </div>
+      <div class="hk-admin-list" id="hkAdminListBox2" hidden>
+        <p class="settings-state">次级管理员</p>
+        <div id="hkAdminList2"></div>
+      </div>
+      <div class="hk-admin-add" id="hkAdminPinBox" hidden>
+        <label class="auth-field">
+          <span class="auth-label">管理员口令</span>
+          <input id="hkAdminPin" class="auth-input" type="password" maxlength="20" placeholder="至少 6 位" />
+        </label>
+        <div class="auth-upload-row">
+          <button class="auth-code-btn" id="hkAdminPinBtn" type="button">确定</button>
+        </div>
+        <p class="auth-note" id="hkAdminPinHint" role="status"></p>
+      </div>
+      <p class="auth-note" id="hkAdminNote2" role="status"></p>
+    </section>
+
+    <section class="settings-section hk-cloud-zone" id="hkCloudZone" hidden>
+      <div class="settings-section-title">云同步（曲谱库服务器存储）</div>
+      <p class="settings-state">配置 GitHub 仓库后，上传 / 删除曲谱会自动推送到服务器，打开乐谱库自动拉取。Token 仅保存在本机浏览器。</p>
+      <label class="auth-field">
+        <span class="auth-label">GitHub Token</span>
+        <input id="hkCloudToken" class="auth-input" type="password" placeholder="ghp_xxxxxxxx" />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">仓库</span>
+        <input id="hkCloudRepo" class="auth-input" type="text" placeholder="用户名/仓库名" />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">分支</span>
+        <input id="hkCloudBranch" class="auth-input" type="text" value="main" />
+      </label>
+      <label class="auth-field">
+        <span class="auth-label">存储路径</span>
+        <input id="hkCloudPath" class="auth-input" type="text" value="updream-data/scores.json" />
+      </label>
+      <div class="hk-admin-ctrl">
+        <button class="auth-code-btn" id="hkCloudSaveBtn" type="button">保存配置</button>
+        <button class="auth-code-btn ghost" id="hkCloudTestBtn" type="button">测试连接</button>
+        <button class="auth-code-btn ghost" id="hkCloudPushBtn" type="button">立即推送</button>
+        <button class="auth-code-btn ghost" id="hkCloudPullBtn" type="button">立即拉取</button>
+      </div>
+      <p class="auth-note" id="hkCloudNote" role="status">未配置</p>
+    </section>
+
+  </div>
+</div>
+
+<script src="../../auth.js"></script>
+<script src="common.js?v=20260917p"></script>
+<script src="library.js?v=20260917p"></script>
+</body>
+</html>

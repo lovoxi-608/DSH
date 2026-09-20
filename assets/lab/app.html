@@ -1,0 +1,483 @@
+<!-- 口琴谱解析小应用（挂在 /lab 的 #labMount 里，布局参照 updream.cn） -->
+<div class="hk-app" id="hkApp">
+
+  <!-- ═══ 顶栏：左上 logo / 右上登录，均指向 README 提供的页面 http://127.0.0.1:8787/lab ═══ -->
+  <header class="hk-nav">
+    <a class="hk-logo" title="updream">
+      <svg class="hk-logo-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+        <defs>
+          <linearGradient id="hkLogoGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#0ea5e9"/>
+          </linearGradient>
+        </defs>
+        <rect x="1" y="1" width="30" height="30" rx="8" fill="url(#hkLogoGrad)"/>
+        <path d="M16 6c-4 6-6 9-6 13a6 6 0 0 0 12 0c0-2-1-3-1-3" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>
+        <path d="M20 7.5l1.6 1.6M21.6 5.9l.5 2.6 2.6.5-2.6.5-.5 2.6-.5-2.6-2.6-.5 2.6-.5z" fill="#fbbf24"/>
+      </svg>
+      <span class="hk-logo-text">updream</span>
+    </a>
+
+    <nav class="hk-nav-links" aria-label="操作步骤">
+      <a href="lab.html" class="is-active">旋律练习</a>
+      <a href="assets/lab/library.html">乐谱库</a>
+    </nav>
+
+    <button class="hk-admin-gear" id="hkAdminGear" type="button" title="管理员" hidden><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+
+    <a class="hk-login" id="hkLogin" title="登录后显示昵称"><span class="hk-login-dot"></span><span id="hkLoginText">登录</span></a>
+    <div class="hk-user-pop" id="hkUserPop" hidden>
+      <div class="hk-user-pop-head">
+        <i class="hk-avatar-mini" id="hkPopAvatar"></i>
+        <div><b id="hkPopName">用户</b><small id="hkPopPhone"></small></div>
+      </div>
+      <button class="hk-user-pop-item" id="hkPopSettings" type="button"><svg class="hk-pop-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>个人设置</button>
+      <button class="hk-user-pop-item hk-user-pop-out" id="hkPopLogout" type="button"><svg class="hk-pop-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>退出登录</button>
+    </div>
+  </header>
+
+  <!-- ═══ 首屏 ═══ -->
+  <section class="hk-hero">
+    <div class="hk-hero-inner">
+      <h1>把曲谱，解析成<span class="hk-accent">游戏口琴谱</span></h1>
+      <p class="hk-sub">拖入 MIDI / txt 曲谱或音频，自动识别旋律并按《三角洲行动》口琴体系映射：
+        z x c v b n m = do~si、逗号=高音do；<b>左键=低八度 · 右键=高八度 · 中键=升半音</b>，
+        支持 MIDI 多轨分解与双 txt 格式，可试听、可导出、可存入乐谱库。</p>
+      <div class="hk-hero-badges">
+        <span class="hk-badge">基础键 z x c v b n m ,</span>
+        <span class="hk-badge">左键低八度 · 右键高八度 · 中键升半音</span>
+        <span class="hk-badge">可导出 + 悬浮引导小程序</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 工作区 ═══ -->
+  <main class="hk-workspace">
+
+    <!-- 第 1 步：拖入音频 -->
+    <section class="hk-card" id="hkUpload">
+      <div class="hk-card-head">
+        <span class="hk-step">1</span>
+        <h2>拖入曲谱文件</h2>
+        <p class="hk-card-desc">支持 MIDI（.mid/.midi）多轨分解、两种 txt 谱面，以及 mp3 / wav / m4a / ogg 音频，全部在浏览器本地解析，不上传服务器。</p>
+      </div>
+
+      <div class="hk-dropzone" id="hkDrop" tabindex="0" role="button" aria-label="上传曲谱文件">
+        <svg viewBox="0 0 48 48" width="46" height="46" aria-hidden="true">
+          <rect x="8" y="12" width="32" height="26" rx="4" fill="none" stroke="#9ca3af" stroke-width="2.4"/>
+          <path d="M8 28l9-9 7 7 5-5 11 11" fill="none" stroke="#9ca3af" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="32" cy="18" r="3" fill="#9ca3af"/>
+          <path d="M24 21v-9m0 0l-3.4 3.4M24 12l3.4 3.4" stroke="#2563eb" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="hk-drop-main">拖入 MIDI / txt / 音频，或<span class="hk-drop-link">点击选择</span></p>
+        <p class="hk-drop-sub">文件将在本地完成解析</p>
+        <input type="file" id="hkFile" accept=".mid,.midi,.txt,audio/*,.mp3,.wav,.m4a,.ogg,.flac,.aac" hidden>
+      </div>
+
+      <div class="hk-filebar" id="hkFilebar" hidden>
+        <div class="hk-fileinfo">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path d="M9 18V6l10-2v12" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="7" cy="18" r="2.4" fill="#2563eb"/><circle cx="17" cy="16" r="2.4" fill="#2563eb"/>
+          </svg>
+          <div class="hk-filemeta">
+            <strong id="hkFileName">audio.mp3</strong>
+            <span id="hkFileSize">--</span>
+          </div>
+        </div>
+        <audio id="hkPlayer" controls preload="metadata"></audio>
+        <button class="hk-btn hk-btn-ghost" id="hkRechoose" type="button">重新选择</button>
+      </div>
+    </section>
+
+    <!-- 第 2 步：选择解析格式 -->
+    <section class="hk-card" id="hkFormat">
+      <div class="hk-card-head">
+        <span class="hk-step">2</span>
+        <h2>选择解析格式</h2>
+        <p class="hk-card-desc">约定格式 txt（音阶·持续·间隔）与节拍谱 txt（小节/键位/节奏）——选择后拖入对应 txt 即自动解析；MIDI 与音频无需选择。</p>
+      </div>
+
+      <div class="hk-formats" role="radiogroup" aria-label="解析格式">
+        <label class="hk-format hk-format-active">
+          <input type="radio" name="hkFormat" value="harmonica" checked>
+          <span class="hk-format-radio"></span>
+          <span class="hk-format-body">
+            <span class="hk-format-name">约定格式 txt <em class="hk-tag hk-tag-now">本次格式</em></span>
+            <span class="hk-format-desc">约定编排格式：每音三个值「音阶 / 持续(ms) / 间隔(ms)」，如 ("1","200ms","100ms")；支持【】低八度 { }高八度 #升半音</span>
+          </span>
+          <span class="hk-format-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="30" height="30">
+              <path d="M9 18V6l10-2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              <circle cx="7" cy="18" r="2.4" fill="currentColor"/><circle cx="17" cy="16" r="2.4" fill="currentColor"/>
+            </svg>
+          </span>
+        </label>
+
+        <label class="hk-format">
+          <input type="radio" name="hkFormat" value="delta">
+          <span class="hk-format-radio"></span>
+          <span class="hk-format-body">
+            <span class="hk-format-name">节拍谱 txt <em class="hk-tag hk-tag-now">本次格式</em></span>
+            <span class="hk-format-desc">小节 / 简谱 / 键位 / 节奏 四行谱（如《前前前世》），自动翻译为口琴键位与节奏</span>
+          </span>
+          <span class="hk-format-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="30" height="30">
+              <path d="M5 4h14v16H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="hk-format hk-format-reserved" aria-disabled="true">
+          <span class="hk-format-radio"></span>
+          <span class="hk-format-body">
+            <span class="hk-format-name">预留格式位 <em class="hk-tag hk-tag-reserved">敬请期待</em></span>
+            <span class="hk-format-desc">更多解析格式将陆续接入（如吉他谱 / 钢琴谱 / 简谱打印等）</span>
+          </span>
+          <span class="hk-format-icon" aria-hidden="true">＋</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 第 3 步：开始解析 -->
+    <section class="hk-card hk-card-cta" id="hkGo">
+      <button class="hk-btn hk-btn-primary" id="hkParse" type="button" disabled>开始解析</button>
+      <p class="hk-cta-sub" id="hkCtaSub">请先拖入一个音频文件</p>
+      <div class="hk-progress" id="hkProgress" hidden>
+        <div class="hk-progress-bar" id="hkProgressBar"></div>
+        <span class="hk-progress-text" id="hkProgressText">解析中…</span>
+      </div>
+    </section>
+
+    <!-- ═══ 音轨展示框（解析 MIDI / txt 后替换解析框） ═══ -->
+    <section class="hk-card hk-studio-card" id="hkStudioView" hidden>
+      <div class="hk-result-head">
+        <div>
+          <h2>音轨展示框 <span class="hk-key" id="stKey">MIDI</span></h2>
+          <p class="hk-card-desc" id="stMeta">--</p>
+        </div>
+        <div class="hk-result-tools">
+          <input class="hk-nameinput" id="stName" type="text" maxlength="24" placeholder="曲名（导出/保存用）">
+          <button class="hk-btn hk-btn-primary" id="stSaveLib" type="button">💾 存入乐谱库</button>
+        </div>
+      </div>
+
+      <!-- 音轨选择 -->
+      <div class="hk-shift-panel">
+        <span class="hk-shift-title">音轨</span>
+        <div class="hk-studio-tracks">
+          <select class="hk-swin-base" id="stTrackSel"></select>
+          <div class="hk-studio-tracktoggle" id="stTrackToggle"></div>
+        </div>
+        <span class="hk-shift-title">移调</span>
+        <div class="hk-studio-slider">
+          <input type="range" id="stTranspose" min="-12" max="12" value="0" title="整曲移调（半音）">
+          <span id="stTransposeVal">±0</span>
+        </div>
+        <label class="hk-rig-mute" title="超出口琴范围时自动折叠八度"><input type="checkbox" id="stFold" checked> 八度折叠</label>
+      </div>
+
+      <!-- 演奏参数 -->
+      <div class="hk-studio-params">
+        <label class="hk-rig-vol">速度 <input type="range" id="stSpeed" min="40" max="180" value="100"> <span id="stSpeedVal">100%</span></label>
+        <label class="hk-rig-vol">连音 <input type="range" id="stLegato" min="20" max="100" value="92"> <span id="stLegatoVal">92%</span></label>
+        <label class="hk-rig-vol">呼吸 <input type="range" id="stBreath" min="0" max="100" value="20"> <span id="stBreathVal">20%</span></label>
+      </div>
+
+      <!-- 钢琴卷帘 -->
+      <div class="hk-roll" id="stRoll" style="height:210px"><svg id="stSvg" preserveAspectRatio="none"></svg></div>
+
+      <div class="hk-studio-playbar">
+        <button class="hk-btn hk-btn-primary" id="stPlay" type="button">▶ 试听演奏</button>
+        <button class="hk-btn hk-btn-ghost" id="stStop" type="button" disabled>■ 停止</button>
+        <input type="range" id="stSeek" min="0" max="1000" value="0" title="进度">
+        <span class="hk-studio-time"><span id="stCur">00:00.000</span> / <span id="stDur">00:00.000</span></span>
+        <label class="hk-rig-mute"><input type="checkbox" id="stMute"> 静音</label>
+        <label class="hk-rig-vol">音量 <input type="range" id="stVol" min="0" max="100" value="20"> <span id="stVolVal">20%</span></label>
+      </div>
+
+      <div class="hk-studio-actions">
+        <button class="hk-btn hk-btn-ghost" id="stExportTxt" type="button">⬇ 导出约定格式 txt</button>
+        <button class="hk-btn hk-btn-ghost" id="stExportMidi" type="button">⬇ 导出 MIDI</button>
+        <button class="hk-btn hk-btn-ghost" id="stRevert" type="button">← 返回重新解析</button>
+        <span class="hk-studio-hint">F8 播放/停止 · F9 存入乐谱库</span>
+      </div>
+    </section>
+
+    <!-- ═══ 解析结果 ═══ -->
+    <section class="hk-card hk-result-card" id="hkResult" hidden>
+      <div class="hk-result-head">
+        <div>
+          <h2>游戏口琴谱 <span class="hk-key" id="hkKey">基键本音</span></h2>
+          <p class="hk-card-desc" id="hkResultMeta">--</p>
+        </div>
+        <div class="hk-result-tools">
+          <input class="hk-nameinput" id="hkScoreName" type="text" maxlength="24" placeholder="曲名（导出用）">
+          <button class="hk-btn hk-btn-primary" id="hkExport" type="button">导出 txt</button>
+        </div>
+      </div>
+
+      <!-- 基准八度选择（三角洲口琴体系的移调方式） -->
+      <div class="hk-shift-panel">
+        <span class="hk-shift-title">基准八度（整曲移调）</span>
+        <div class="hk-shift-grid hk-shift-grid-oct">
+          <button class="hk-btn hk-btn-ghost hk-octbtn active" type="button" data-oct="auto" title="自动选择让最多音符落在可演奏区">自动</button>
+          <button class="hk-btn hk-btn-ghost hk-octbtn" type="button" data-oct="3" title="中音do = C3">C3</button>
+          <button class="hk-btn hk-btn-ghost hk-octbtn" type="button" data-oct="4" title="中音do = C4">C4</button>
+          <button class="hk-btn hk-btn-ghost hk-octbtn" type="button" data-oct="5" title="中音do = C5">C5</button>
+          <button class="hk-btn hk-btn-ghost hk-octbtn" type="button" data-oct="6" title="中音do = C6">C6</button>
+          <button class="hk-btn hk-btn-ghost hk-octbtn" type="button" data-oct="7" title="中音do = C7">C7</button>
+        </div>
+      </div>
+
+      <div class="hk-tip">
+        提示：<b>左键</b> 按住 = 低八度 · <b>右键</b> 按住 = 高八度 · <b>中键</b> 按住 = 升半音；逗号 = 高音do；
+        可演奏范围 = 基准八度 ± 1 八度 + 高高音 do / #do，超出部分自动标为「跳过」
+      </div>
+
+      <div class="hk-score" id="hkScore" tabindex="0"></div>
+
+      <div class="hk-legend">
+        <span class="hk-legend-item"><i class="hk-dot hk-mod-mid"></i>基准（不按修饰键）</span>
+        <span class="hk-legend-item"><i class="hk-dot hk-mod-low"></i>低八度（左键）</span>
+        <span class="hk-legend-item"><i class="hk-dot hk-mod-high"></i>高八度（右键）</span>
+        <span class="hk-legend-item"><i class="hk-dot hk-mod-sharp"></i>升半音（中键）</span>
+        <span class="hk-legend-item"><i class="hk-dot hk-mod-low-sharp"></i>低八度+升半音</span>
+        <span class="hk-legend-item"><i class="hk-dot hk-mod-high-sharp"></i>高八度+升半音</span>
+      </div>
+
+      <div class="hk-tip hk-tip-export">
+        导出格式（简谱·持续·间隔）：<code>("1","200ms","100ms","2","150ms","80ms")</code>
+        —— 每音三个值：<b>音阶</b>、<b>持续时间</b>（发声时长，ms）、<b>下一音间隔</b>（到下一音开始，ms）。
+        记法：<b>1234567i</b> = do re mi fa sol la si 高音do；<b>【】</b>=低八度（左键）、<b>{}</b>=高八度（右键）、<b>#</b>=升半音（中键）。
+        导出的 txt 可直接拖入下方「乐谱视窗」，在可视化编辑器里逐音修改或增加新音。
+      </div>
+
+      <div class="hk-result-actions">
+        <button class="hk-btn hk-btn-primary" id="hkPlay" type="button">▶ 试听口琴演奏</button>
+        <button class="hk-btn hk-btn-ghost" id="hkStop" type="button" disabled>■ 停止</button>
+        <span class="hk-note-count" id="hkNoteCount"></span>
+      </div>
+    </section>
+
+    <!-- ═══ 口琴按键测试台（依照《三角洲行动》口琴体系） ═══ -->
+    <section class="hk-card hk-rig-card" id="hkRig">
+      <div class="hk-card-head">
+        <span class="hk-step">⚡</span>
+        <h2>口琴按键测试台</h2>
+        <p class="hk-card-desc">与游戏口琴一致：z x c v b n m = do~si，逗号 = 高音do；按住<b>左键</b>=低八度、<b>右键</b>=高八度、<b>中键</b>=升半音。可点击虚拟键或直接按键盘实时试音。</p>
+      </div>
+
+      <div class="hk-rig">
+        <div class="hk-rig-toolbar">
+          <label class="hk-rig-base">中音 do = <select id="rigBaseSel"></select></label>
+          <label class="hk-rig-mute"><input type="checkbox" id="rigMute"> 静音</label>
+          <label class="hk-rig-vol">🔊 <input type="range" id="hkVolume" min="0" max="100" value="20"> <span id="hkVolumeVal">20%</span></label>
+          <button class="hk-btn hk-btn-ghost" id="rigClear" type="button">全部松开（紧急停止）</button>
+          <button class="hk-btn hk-btn-ghost" id="rigFScore" type="button">乐谱表 ⌗</button>
+          <span class="hk-lamp" id="lampL">左键 低八度<i class="hk-lamp-dot"></i></span>
+          <span class="hk-lamp" id="lampR">右键 高八度<i class="hk-lamp-dot"></i></span>
+          <span class="hk-lamp" id="lampM">中键 升半音<i class="hk-lamp-dot"></i></span>
+        </div>
+
+        <div class="hk-rig-now">
+          <span class="hk-rig-big" id="rigNowName">—</span>
+          <span class="hk-rig-combo" id="rigNowCombo">等待按键…</span>
+        </div>
+
+        <div class="hk-rig-legend">音高范围（低音do ~ 高高音#do；橙=低八度、蓝=高八度、紫=高高音）：</div>
+        <div class="hk-rig-piano" id="rigPiano"></div>
+
+        <div class="hk-rig-label">输入键（可点击，也可用键盘按）：</div>
+        <div class="hk-rig-keys" id="rigKeys"></div>
+
+        <p class="hk-rig-rules">规则：z x c v b n m = do re mi fa sol la si（中音）；逗号 = 高音do；按住左键 = 整排降到低八度；
+          按住右键 = 整排升到高八度；右键+逗号 = 高高音do；再按中键 = 高高音#do；每个键 + 中键 = 升半音。</p>
+
+        <div class="hk-sound-cfg">
+          <span class="hk-sc-label">口琴音色目录</span>
+          <input class="hk-nameinput hk-sc-input" id="hkSoundDir" type="text" value="/assets/lab/sounds/" spellcheck="false" autocomplete="off">
+          <button class="hk-btn hk-btn-ghost" id="hkSoundApply" type="button">应用</button>
+          <span class="hk-sc-status" id="hkSoundStatus">真实口琴采样：加载中…</span>
+          <p class="hk-sc-tip">把每个键位的音色文件放进该目录即可自动替换试听音色：<b>z.mp3 x.mp3 c.mp3 v.mp3 b.mp3 n.mp3 m.mp3 comma.mp3</b>（支持 .mp3/.wav/.ogg）；缺省使用内置 Hohner Silverstar 真实口琴采样（CC0 公共领域）。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 乐谱视窗（拖入 txt → 按键顺序 → 自动演奏） ═══ -->
+    <section class="hk-card hk-swin-card" id="hkScoreWin">
+      <div class="hk-card-head">
+        <span class="hk-step">♫</span>
+        <h2>乐谱视窗</h2>
+        <p class="hk-card-desc">拖入导出的 txt（<code>("C4","100ms","C5","50ms")</code>）自动解析为按键顺序；也可直接在此修改音阶与间隔，点「自动演奏」让测试台与乐谱表按谱演奏。</p>
+      </div>
+
+      <div class="hk-swin">
+        <div class="hk-swin-left">
+          <div class="hk-swin-drop" id="swinDrop" tabindex="0" role="button">
+            <svg viewBox="0 0 48 48" width="38" height="38" aria-hidden="true">
+              <path d="M14 6l10 22h8L42 6M22 32h6l-4 12z" fill="none" stroke="#9ca3af" stroke-width="2.2" stroke-linejoin="round"/>
+              <path d="M24 14v9m0 0l-3.4-3.4M24 23l3.4-3.4" stroke="#2563eb" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <p class="hk-swin-drop-main">拖入 txt 曲谱，或<span class="hk-drop-link">点击选择</span></p>
+            <p class="hk-swin-drop-sub">格式：("音阶","持续ms","间隔ms") 每音三个值</p>
+            <input type="file" id="swinFile" accept=".txt,text/plain" hidden>
+          </div>
+
+          <div class="hk-swin-edit-tabs">
+            <button class="hk-swin-tab active" type="button" data-mode="text">📝 文本编辑</button>
+            <button class="hk-swin-tab" type="button" data-mode="visual">🎛 可视化编辑</button>
+          </div>
+
+          <!-- 文本编辑模式（老的，保留） -->
+          <div class="hk-swin-editor" id="swinTextMode">
+            <div class="hk-swin-ed-head">txt 内容（可直接修改音阶 / 持续 / 间隔）</div>
+            <textarea id="swinTxt" spellcheck="false" wrap="off"
+              placeholder='示例：
+("1","200ms","100ms","2","150ms","80ms","【5】","300ms","120ms","{i}","400ms","200ms")'></textarea>
+          </div>
+
+          <!-- 可视化编辑模式（新增，逐音三输入框） -->
+          <div class="hk-swin-visual" id="swinVisualMode" hidden>
+            <!-- 打拍录入节奏面板 -->
+            <div class="hk-swin-tap">
+              <div class="hk-swin-tap-head" id="swinTapToggle">
+                <span class="hk-swin-tap-title">🎙 打拍录入节奏（哼不准间隔时，连续点击/按空格记录节奏）</span>
+                <span class="hk-swin-tap-arrow" id="swinTapArrow">▼</span>
+              </div>
+              <div class="hk-swin-tap-body" id="swinTapBody" hidden>
+                <div class="hk-swin-tap-row">
+                  <label class="hk-swin-tap-field">
+                    <span>音阶序列（连续输入自动拆分）</span>
+                    <input type="text" id="swinTapPitches" placeholder="如 12345{i} 或 1,2,3,4,5，支持【】{}#" spellcheck="false">
+                  </label>
+                </div>
+                <div class="hk-swin-tap-row hk-swin-tap-actions">
+                  <button class="hk-btn hk-btn-primary hk-swin-tap-btn" id="swinTapBtn" type="button">开始打拍录制</button>
+                  <button class="hk-btn hk-btn-ghost hk-swin-tap-pad" id="swinTapPad" type="button">打拍（空格键）</button>
+                  <button class="hk-btn hk-btn-ghost hk-swin-tap-setbtn" id="swinTapSetBtn" type="button">⚙ 打拍设置</button>
+                  <span class="hk-swin-tap-status" id="swinTapStatus">输入音阶 → 点开始 → 连续点击「打拍」或按空格</span>
+                </div>
+                <div class="hk-swin-tap-setpanel" id="swinTapSetPanel" hidden>
+                  <label class="hk-swin-tap-setfield">
+                    <span>默认持续时间 (ms)</span>
+                    <input type="number" id="swinTapDur" value="200" min="10" step="10">
+                  </label>
+                  <label class="hk-swin-tap-setfield">
+                    <span>续写在后面（不勾则重写本次新增段）</span>
+                    <input type="checkbox" id="swinTapAppend" checked>
+                  </label>
+                  <label class="hk-swin-tap-setfield">
+                    <span>同步延迟（持续时间 = 间隔）</span>
+                    <input type="checkbox" id="swinTapSync">
+                  </label>
+                </div>
+                <div class="hk-swin-tap-tip">打拍次数 = 音阶数时自动提示；多打的拍会被忽略，少打的用最后一次间隔补全。录制中可随时点「停止并生成」。</div>
+              </div>
+            </div>
+
+            <div class="hk-swin-vhead">
+              <span class="hk-swin-vcol hk-swin-vcol-idx">#</span>
+              <span class="hk-swin-vcol hk-swin-vcol-pitch">音阶</span>
+              <span class="hk-swin-vcol hk-swin-vcol-dur">持续(ms)</span>
+              <span class="hk-swin-vcol hk-swin-vcol-gap">间隔(ms)</span>
+              <span class="hk-swin-vcol hk-swin-vcol-del"></span>
+            </div>
+            <div class="hk-swin-vlist" id="swinVList"></div>
+            <div class="hk-swin-vtools">
+              <button class="hk-btn hk-btn-ghost hk-swin-add" id="swinAddNote" type="button">＋ 增加下一音</button>
+              <button class="hk-btn hk-btn-ghost" id="swinSave" type="button">💾 保存乐谱</button>
+              <button class="hk-btn hk-btn-ghost hk-swin-download" id="swinDownload" type="button" title="下载当前乐谱为 txt 文件">⬇ 下载 txt</button>
+              <select class="hk-swin-saved-select" id="swinSavedList"><option value="">载入已保存…</option></select>
+              <button class="hk-btn hk-btn-ghost" id="swinLoadSaved" type="button">载入</button>
+              <button class="hk-btn hk-btn-ghost hk-swin-del-saved" id="swinDelSaved" type="button" title="删除当前选中的已保存乐谱">🗑 删除</button>
+              <button class="hk-btn hk-btn-ghost hk-swin-clear" id="swinClear" type="button">清空当前</button>
+            </div>
+          </div>
+
+          <div class="hk-swin-tools">
+            <label class="hk-swin-base">基准八度
+              <select id="swinBase">
+                <option value="auto" selected>自动</option>
+                <option value="3">C3</option><option value="4">C4</option>
+                <option value="5">C5</option><option value="6">C6</option><option value="7">C7</option>
+              </select>
+            </label>
+            <button class="hk-btn hk-btn-ghost" id="swinParse" type="button">解析按键顺序</button>
+            <button class="hk-btn hk-btn-ghost" id="swinLoadExample" type="button">载入示例</button>
+          </div>
+        </div>
+
+        <div class="hk-swin-right">
+          <div class="hk-swin-keys-head">按键顺序<span class="hk-swin-keys-meta" id="swinMeta"></span></div>
+          <div class="hk-swin-keys" id="swinKeys">
+            <div class="hk-swin-empty">拖入或粘贴 txt 后自动解析为按键顺序…</div>
+          </div>
+          <div class="hk-swin-actions">
+            <button class="hk-btn hk-btn-primary" id="swinPlay" type="button" disabled>▶ 自动演奏</button>
+            <button class="hk-btn hk-btn-ghost" id="swinStop" type="button" disabled>■ 停止</button>
+            <span class="hk-swin-status" id="swinStatus">等待曲谱…</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 乐谱表悬浮窗（可拖动 / 调整大小，乐谱显示 + 记事本） ═══ -->
+    <div class="hk-fscore" id="hkFScore">
+      <div class="hk-fscore-bar" id="fscoreBar">
+        <span class="hk-fscore-title">乐谱表</span>
+        <span class="hk-fscore-btns">
+          <button type="button" class="hk-fscore-min" id="fscoreMin" title="最小化">─</button>
+          <button type="button" class="hk-fscore-close" id="fscoreClose" title="关闭">✕</button>
+        </span>
+      </div>
+      <div class="hk-fscore-body">
+        <!-- 乐谱视图 -->
+        <div class="hk-fscore-view" id="fscoreViewScore">
+          <div class="hk-fscore-now" id="fscoreNow"><span class="hk-fscore-key">—</span><span class="hk-fscore-mod">等待乐谱</span><span class="hk-fscore-pos" id="fscorePos" hidden>1/1</span></div>
+          <div class="hk-fscore-next" id="fscoreNext"></div>
+        </div>
+        <!-- 记事本视图 -->
+        <div class="hk-fscore-view" id="fscoreViewNote" hidden>
+          <div class="hk-fscore-note-tools">
+            <select class="hk-fscore-saved" id="fscoreSavedList"><option value="">选择已保存乐谱…</option></select>
+            <button type="button" class="hk-btn hk-btn-ghost hk-fscore-get" id="fscoreGetSaved">获取音阶</button>
+          </div>
+          <textarea class="hk-fscore-note" id="fscoreNote" spellcheck="false"
+            placeholder="在此自由记录乐谱或备注…&#10;点上方「获取音阶」可一键填入已保存乐谱的音阶顺序（仅音阶，不含时长/间隔，长间隔处自动换行）"></textarea>
+        </div>
+      </div>
+      <!-- 底部切换条（不在最顶上） -->
+      <div class="hk-fscore-switch">
+        <button type="button" class="hk-fscore-swbtn active" data-view="score">🎵 乐谱</button>
+        <button type="button" class="hk-fscore-swbtn" data-view="note">📝 记事本</button>
+      </div>
+      <div class="hk-fscore-resize" id="fscoreResize" title="拖动调整大小"></div>
+    </div>
+  </main>
+    <section class="hk-card hk-download-card" id="hkDownload">
+      <div class="hk-card-head">
+        <span class="hk-step hk-step-dl">↓</span>
+        <h2>下载「口琴助手」悬浮小程序</h2>
+        <p class="hk-card-desc">解析好的曲谱导出发到小程序，悬浮在游戏窗口上，按节奏提示你按哪个键、按哪个鼠标修饰键。</p>
+      </div>
+
+      <div class="hk-dl-body">
+        <div class="hk-dl-actions">
+          <a class="hk-btn hk-btn-primary hk-dl-btn" href="assets/lab/downloads/kouqin-helper.py" download="口琴助手.py">下载口琴助手（.py 源码）</a>
+          <a class="hk-btn hk-btn-ghost hk-dl-btn" href="assets/lab/downloads/口琴助手使用说明.txt" download="口琴助手使用说明.txt">使用说明</a>
+        </div>
+        <ul class="hk-dl-tips">
+          <li>悬浮窗置顶、半透明，可拖动 / 缩放到游戏画面任意位置；<b>Shift+F10</b> 一键面板穿透（鼠标直接透给游戏）。</li>
+          <li>在网页里点「导出曲谱」保存 .txt，回到小程序按 <b>Shift+F11</b> 添加曲谱，即可开始按键引导。</li>
+          <li>修饰键与游戏一致：<b>左键=低八度 · 右键=高八度 · 中键=升半音</b>，基准音不用按修饰键。</li>
+          <li>小程序以源码方式提供（纯 Python 标准库，需安装 Python 3.10+）；运行方式：<code>python kouqin-helper.py</code>。</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="hk-footer">
+    <p>页面布局参考 <a href="https://www.updream.cn/" target="_blank" rel="noopener">updream.cn</a> · 音频在本地解析，数据不出浏览器</p>
+  </footer>
+</div>
