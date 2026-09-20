@@ -20,9 +20,9 @@
   /* ★★★ 唯一接入点：指向你自己的应用文件（默认就是 web/assets/lab/ 下的三件套） ★★★ */
   const LAB_APP = {
     title: "小应用",                       // 顶栏标题 + 浏览器标签页标题
-    html: "assets/lab/app.html?v=20260917p",          // 应用 HTML
-    css: "assets/lab/app.css?v=20260917p",            // 应用样式（可留空字符串）
-    js: "assets/lab/app.js?v=20260917p",              // 应用脚本（可留空字符串）
+    html: "assets/lab/app.html?v=20260917q",          // 应用 HTML
+    css: "assets/lab/app.css?v=20260917q",            // 应用样式（可留空字符串）
+    js: "assets/lab/app.js?v=20260917q",              // 应用脚本（可留空字符串）
   };
 
   const labMount = document.getElementById("labMount");
@@ -145,10 +145,16 @@
   window.LabHost = LabHost;
 
   /* ---------- 外壳自身的行为 ---------- */
-  document.getElementById("labBack")?.addEventListener("click", () => { location.href = "/"; });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") location.href = "/";   // Esc 直接回聊天页
-  });
+  var STATIC_MODE = location.protocol === "file:" || !["127.0.0.1", "localhost"].includes(location.hostname);
+  var labBackBtn = document.getElementById("labBack");
+  if (STATIC_MODE) {
+    if (labBackBtn) labBackBtn.style.display = "none";  // 静态托管（GitHub Pages 等）没有聊天页可回
+  } else if (labBackBtn) {
+    labBackBtn.addEventListener("click", () => { location.href = "/"; });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") location.href = "/";   // Esc 直接回聊天页
+    });
+  }
 
   LabHost.load();
 })();
