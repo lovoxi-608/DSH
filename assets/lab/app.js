@@ -1915,7 +1915,7 @@
   function loadCommon(cb) {
     if (window.DFH) { cb(window.DFH); return; }
     var s = document.createElement("script");
-    s.src = dfhBase() + "common.js?v=20260917p";
+    s.src = dfhBase() + "common.js?v=20260917q";
     s.onload = function () { cb(window.DFH); };
     s.onerror = function () { console.warn("common.js 加载失败"); };
     document.head.appendChild(s);
@@ -1939,28 +1939,28 @@
       box._t = setTimeout(function () { box.classList.remove("is-show"); }, 2600);
     }
 
-    /* 根链接自适应：file:// / 静态托管用相对路径；服务器 /lab 模式保持 /lab */
+    /* 根链接自适应：file:// / GitHub Pages 子路径 / 服务器 /lab 三种形态都可用。
+       - 服务器 /lab（127.0.0.1:8787 的 /lab 路由）→ 绝对 /lab
+       - 挂载在 lab.html（页面在仓库根）→ 相对 "lab.html" / "assets/lab/library.html"
+       - 直接打开 assets/lab/app.html → 相对 "../../lab.html" / "library.html" */
     function fixRootLinks() {
       var isFile = location.protocol === "file:";
       var base = dfhBase();
-      /* 导航链接绝对化：避免挂载（lab.html 基准）与直接打开（app.html 基准）的差异 */
-      var navMap = {
-        "lab.html": isFile ? base + "../../lab.html" : "/lab",
-        "assets/lab/library.html": isFile ? base + "library.html" : "/assets/lab/library.html"
-      };
+      var onServerLab = location.pathname === "/lab" || location.pathname === "/lab/";
+      var inLabDir = !isFile && location.pathname.indexOf("/assets/lab/") >= 0;
+      var labLink = isFile ? base + "../../lab.html" : (onServerLab ? "/lab" : (inLabDir ? "../../lab.html" : "lab.html"));
+      var libLink = isFile ? base + "library.html" : (onServerLab ? "/assets/lab/library.html" : (inLabDir ? "library.html" : "assets/lab/library.html"));
+      var navMap = { "lab.html": labLink, "assets/lab/library.html": libLink };
       document.querySelectorAll(".hk-nav a[href]").forEach(function (a) {
         var h = a.getAttribute("href");
         if (navMap[h]) a.setAttribute("href", navMap[h]);
       });
-      var onServerLab = location.pathname === "/lab" || location.pathname === "/lab/";
-      var lab = isFile ? "lab.html" : (onServerLab ? "/lab" : "lab.html");
       var rootA = document.querySelector("a[href^='assets/lab/'], a[href='lab.html']");
-      if (rootA && rootA.getAttribute("href") === "lab.html") rootA.setAttribute("href", lab);
+      if (rootA && rootA.getAttribute("href") === "lab.html") rootA.setAttribute("href", labLink);
+      /* 历史遗留的绝对 /lab 链接一并修正（GitHub Pages 子路径下会 404） */
       document.querySelectorAll("a[href^='/lab']").forEach(function (a) {
         var h = a.getAttribute("href");
-        if (isFile) {
-          a.setAttribute("href", "../../lab.html" + (h.indexOf("#") >= 0 ? h.slice(h.indexOf("#")) : ""));
-        }
+        a.setAttribute("href", labLink + (h.indexOf("#") >= 0 ? h.slice(h.indexOf("#")) : ""));
       });
     }
     fixRootLinks();
