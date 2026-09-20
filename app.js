@@ -1,2593 +1,2077 @@
-/* ═══════════════════════════════════════════════════════════
-   口琴谱解析小应用 —— app.js
-   · 拖入音频 → 本地解码 → 自相关音高检测 → 三角洲口琴体系映射
-   · 键位：z x c v b n m = do re mi fa sol la si（基准八度）；逗号 = 高音 do
-   · 修饰（鼠标）：左键 = 低八度(-12) · 右键 = 高八度(+12) · 中键 = 升半音(+1)
-   · 可演奏范围 = 基准八度 ±1 八度 + 高高音 do / #do（右键+逗号，带#再加中键）
-   · 基准八度自动选择（容纳最多音符）或手动 C3~C7
-   · 谱面装饰化展示 + 导出曲谱（小程序可加载）
-   · 口琴按键测试台（与《三角洲行动》一致）：钢琴条 / 虚拟键 / 指示灯
-   · 试听：真实口琴采样（Hohner Silverstar CC0）+ 每键位自定义音色目录
-   ═══════════════════════════════════════════════════════════ */
-(function () {
-  "use strict";
+/* 对话核心：会话、消息、上下文控制器、历史存档 */
+const STORAGE_KEY = "mogao-five-realms-v1";
 
-  /* ── 三角洲口琴键位与修饰体系 ── */
-  var KEY_LIST = ["z", "x", "c", "v", "b", "n", "m"];   // do..ti
-  var KEY_SEM = { z: 0, x: 2, c: 4, v: 5, b: 7, n: 9, m: 11 };  // 各键相对 do 的半音
-  var TOP_KEY = ",";                                     // 高高音 do 用键
-  var SHARP_PC = [1, 3, 6, 8, 10];                       // 需要中键（升半音）的半音号
-  var DIATONIC_INDEX = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
-  var NAME12 = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-  var DEG = ["do", "#do", "re", "#re", "mi", "fa", "#fa", "sol", "#sol", "la", "#la", "si"];
+/* ═══════════════════════════════════════════════════════════════════
+   ★ AI 头像：想换成自己的图片，只改下面这一行
+     图片放到 web/assets/ai/ 下，例如 "avatar.png" → "/assets/ai/avatar.png"
+   ═══════════════════════════════════════════════════════════════════ */
+const AI_AVATAR_SRC = "/assets/ai/dafeiyu.png";
 
-  /* 六态修饰（槽位 × 升半音） */
-  var MOD_INFO = [
-    { slot: 0,  sharp: false, label: "基准",           mouse: "不按修饰键",         cls: "hk-mod-mid" },
-    { slot: -1, sharp: false, label: "低八度",         mouse: "按住鼠标左键",       cls: "hk-mod-low" },
-    { slot: 1,  sharp: false, label: "高八度",         mouse: "按住鼠标右键",       cls: "hk-mod-high" },
-    { slot: 0,  sharp: true,  label: "升半音",         mouse: "按住鼠标中键",       cls: "hk-mod-sharp" },
-    { slot: -1, sharp: true,  label: "低八度+升半音",  mouse: "按住左键+中键",      cls: "hk-mod-low-sharp" },
-    { slot: 1,  sharp: true,  label: "高八度+升半音",  mouse: "按住右键+中键",      cls: "hk-mod-high-sharp" },
-  ];
+/* ★ 思考强度 5 个档位各自对应的「聊天背景图」（键 = 档位 1~5）
+   图片放 web/assets/bg/ 下，想换图只改这里的地址即可 */
+const MIND_BG_IMAGES = {
+  1: "/assets/bg/1.png",
+  2: "/assets/bg/2.png",
+  3: "/assets/bg/3.png",
+  4: "/assets/bg/4.png",
+  5: "/assets/bg/5.png",
+};
+const EFFORT_LEVEL_KEY = "mogao-effort-level";  // 记住上次选的思考强度
+const MIND_BG_SWITCH_KEY = "mogao-mind-bg";     // 「背景随强度」开关（"1" = 开）
 
-  var state = {
-    file: null,
-    objectUrl: "",
-    audioBuffer: null,
-    notes: [],          // 原始音高音符 {midi,start,end,dur,freq}
-    baseOct: "auto",    // 基准八度："auto" 或 3..7
-    usedBaseOct: 4,     // 实际使用的基准八度
-    playing: false,
-    truncated: false,
+/* 后端 /api/config 会返回同名的 effort_levels（单一数据源），
+   这里只是接口读不到时的兜底，字段含义与 web_app.py 的 EFFORT_LEVELS 一致 */
+const FALLBACK_EFFORT_LEVELS = [
+  { level: 1, key: "eco", label: "极简", thinking: false, effort: "low", max_tokens: 1024, temperature: 0.3, note: "关闭思考链，思考消耗为 0，最省 token" },
+  { level: 2, key: "light", label: "轻量", thinking: false, effort: "low", max_tokens: 2048, temperature: 0.5, note: "关闭思考链，回答简短，适合闲聊与查资料" },
+  { level: 3, key: "balance", label: "均衡", thinking: true, effort: "low", max_tokens: 4096, temperature: 0.6, note: "开启思考，思维链较短，默认档" },
+  { level: 4, key: "deep", label: "深入", thinking: true, effort: "medium", max_tokens: 8192, temperature: 0.7, note: "中等思维链，适合代码与数学" },
+  { level: 5, key: "max", label: "极致", thinking: true, effort: "high", max_tokens: 16384, temperature: 0.8, note: "最长思维链与输出上限，最耗 token" },
+];
+
+function uid() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+const state = {
+  sessionId: uid(),
+  historyId: null,
+  messages: [],
+  summary: "",
+  model: "",
+  models: [],
+  effortLevel: 3,        // 当前思考强度档位（1~5），会真的传给后端
+  effortLevels: [],      // 档位表（来自 /api/config）
+  bgFollow: false,       // 背景是否跟随思考强度
+  lastUsage: null,       // 上一次回答的 token 用量（后端回传）
+  lastEffort: null,      // 上一次回答用的档位
+  thinking: [],
+  thinkingVisible: false,
+  thinkingCollapsed: false,
+  thinkingDone: false,
+  requestError: "",
+};
+
+const $ = (selector) => document.querySelector(selector);
+const messagesEl = $("#messages");
+const workspaceEl = $("#conversationWorkspace");
+const inputEl = $("#messageInput");
+const formEl = $("#chatForm");
+const sendButton = $("#sendButton");
+const modelSelect = $("#modelSelect");
+const controller = $("#contextController");
+const controllerHandle = $("#controllerHandle");
+
+/* ══════════════════════════════════════════════════════════════
+   生成中的回答（按会话各存一份，互不干扰）
+   ──────────────────────────────────────────────────────────────
+   · key = session_id，value = 「流上下文」stream（在 sendMessage 里创建）；
+   · 前台流 = 当前正显示的会话：照旧打字机 + 自动跟随滚动；
+   · 后台流 = 你切走之后仍在生成的会话：静默把回答攒进它自己的消息对象里，
+     生成完自动写回它自己那条会话存档 —— 所以「生成中切走」不会吞回答。
+   ══════════════════════════════════════════════════════════════ */
+const activeChatStreams = new Map();
+
+/* 当前显示会话的流（没有就是 null）：输入框可用性 / 状态栏文案都看它 */
+function foregroundStream() {
+  return activeChatStreams.get(state.sessionId) || null;
+}
+
+/* 输入区可用性：只有「正在看的这段会话在生成中」才锁住输入框；
+   后台流不锁 —— 生成中也能点「新聊天」开始新对话。 */
+function syncComposer() {
+  const busy = !!foregroundStream();
+  sendButton.disabled = busy;
+  inputEl.disabled = busy;
+  if (busy) $("#typingState").textContent = "思考中...";
+}
+
+/* ══════════════════════════════════════════════════════════════
+   消息流滚动：只有「本来就停在最底部」才会自动跟随，
+   往上翻看历史时绝不把镜头拉回来（想看最新就点「回到最新」）。
+   ══════════════════════════════════════════════════════════════ */
+let messagesPinned = true;
+const NEAR_BOTTOM_PX = 56;
+
+function nearMessagesBottom() {
+  return messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight <= NEAR_BOTTOM_PX;
+}
+
+function updateScrollLatestHint() {
+  $("#scrollLatestBtn")?.classList.toggle("is-away", !messagesPinned && state.messages.length > 0);
+}
+
+/* force = true 时无视位置强制到底（切换会话用）；否则只在贴底时才跟随 */
+function scrollMessagesToBottom(force) {
+  if (!force && !messagesPinned) return;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+}
+
+/* ========== 身份 / 头像 / 模型名 ========== */
+/* 注意：变量名不能和 auth.js / pet.js / theme.js 里同作用域的 const 重名，
+   否则后来的脚本会抛 SyntaxError 而整个失效（auth.js 里也有个人形图标常量）。 */
+const AVATAR_FALLBACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+
+function currentUser() {
+  return window.currentAuthUser || window.authPointer?.getUser?.() || null;
+}
+
+function userAvatarMarkup(user) {
+  if (user?.avatar) return `<img src="${escapeHtml(user.avatar)}" alt="">`;
+  const initial = String(user?.name || "").trim().slice(0, 1);
+  return initial ? escapeHtml(initial) : AVATAR_FALLBACK_ICON;
+}
+
+/* 气泡上方的名字 = 当前模型（如 deepseek-flash 4.1） */
+function modelLabel(id) {
+  return state.models.find((model) => model.id === id)?.label || id || "模型";
+}
+
+/* 「模型选择」下拉框的淡蓝皮肤：当前用的是 DeepSeek 时加 .is-deepseek（样式在 app.css） */
+function applyModelSelectTint() {
+  modelSelect.classList.toggle("is-deepseek", /^deepseek/i.test(String(state.model || "")));
+}
+
+/* 用户消息上方显示发送者昵称（鼠标悬停气泡头像可看到用户 id），没登录才是「访客」。
+   发送时会把当时的身份记进消息里，所以历史消息不会被后来的登录/退出改写。 */
+function senderLabel(item) {
+  const sender = item?.sender;
+  if (sender?.name && sender.name !== "访客") return sender.name;
+  if (sender?.id) return sender.id;              // 老消息只存了 id 时兜底
+  const user = currentUser();
+  return user?.name || user?.id || "访客";
+}
+
+function senderIdOf(item) {
+  return item?.sender?.id || currentUser()?.id || "";
+}
+
+/* ========== 本地状态 ========== */
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    sessionId: state.sessionId,
+    historyId: state.historyId,
+    messages: state.messages,
+    summary: state.summary,
+    model: state.model,
+  }));
+}
+
+function loadState() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    if (!stored) return;
+    state.sessionId = stored.sessionId || state.sessionId;
+    state.historyId = stored.historyId || null;
+    state.messages = Array.isArray(stored.messages)
+      ? stored.messages.filter((item) => !item.streaming && !(item.role === "assistant" && !String(item.content || "").trim()))
+      : [];
+    state.summary = stored.summary || "";
+    state.model = stored.model || "";
+  } catch (error) {
+    console.warn("无法读取本地对话记录", error);
+  }
+}
+
+/* ========== 渲染 ========== */
+/* 「新聊天」仅在当前不在任何历史对话中时保持选中，避免与历史条目同时高亮 */
+function syncNavSelection() {
+  const newChatButton = $("#navNewChat");
+  if (newChatButton) newChatButton.classList.toggle("active", !state.historyId);
+}
+
+function updateWorkspace() {
+  workspaceEl.classList.toggle("has-messages", state.messages.length > 0);
+}
+
+/* 圈形进度条：viewBox 36×36、半径 15 → 周长 2πr ≈ 94.25（与 app.css 里 .ring-bar 的 dasharray 一致） */
+const RING_CIRCUMFERENCE = 2 * Math.PI * 15;
+
+/* 百分比不再直接写在界面上，而是画成圈；数字放进 data-tip，鼠标悬停才显示 */
+function updateRing(ringEl, barEl, percent, tip) {
+  if (!barEl) return;
+  const clamped = Math.max(0, Math.min(100, percent));
+  barEl.style.strokeDasharray = String(RING_CIRCUMFERENCE);
+  barEl.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - clamped / 100));
+  if (!ringEl) return;
+  ringEl.dataset.tip = tip;
+  ringEl.setAttribute("aria-label", `上下文占用 ${tip}`);
+  ringEl.classList.toggle("is-warn", clamped >= 80);   // 快满了变红
+}
+
+/* ══════════════════════════════════════════════════════
+   上下文进度：读「当前模型最近一次调用」上报的上下文大小
+   ──────────────────────────────────────────────────────
+   · 数据源是模型自己回的 usage（后端 done 事件原样透传），挂在每条回答 item.usage 上；
+   · 取 prompt_tokens = 这次回答生成前发出去的上下文（即「上次会话前所获取的」），
+     没有 prompt_tokens 时退回 total_tokens；
+   · 上限按 1M（1,000,000 tokens）折算百分比，**消息条数不再参与进度换算**（条数只在侧栏显示）。
+   ══════════════════════════════════════════════════════ */
+const CONTEXT_LIMIT_TOKENS = 100000;
+
+function contextUsage() {
+  let latest = null;   // 当前模型没记录时，退回整段会话里最近一次的用量
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+    const item = state.messages[index];
+    const usage = item?.usage;
+    if (!usage) continue;
+    const tokens = Number(usage.prompt_tokens) || Number(usage.total_tokens) || 0;
+    if (!tokens) continue;
+    const record = { tokens, model: item.model || "", modelLabel: item.modelLabel || item.model || "" };
+    if (state.model && item.model === state.model) return record;
+    if (!latest) latest = record;
+  }
+  return latest;
+}
+
+function formatTokenCount(tokens) {
+  const value = Number(tokens) || 0;
+  if (value >= 10000) return `${Math.round(value / 1000)}k`;   // 38213 → 38k
+  return value.toLocaleString("en-US");
+}
+
+function updateMemoryMeters() {
+  const usage = contextUsage();
+  const tokens = usage ? usage.tokens : 0;
+  const percent = Math.min(100, (tokens / CONTEXT_LIMIT_TOKENS) * 100);
+  // 1M 上限下日常对话比例很小（几百 tokens 才 0.0x%），小数位随量级走，别让进度看着像 0
+  const percentLabel = percent <= 0
+    ? "0"
+    : percent < 1 ? percent.toFixed(2)
+      : percent < 10 ? percent.toFixed(1) : String(Math.round(percent));
+  /* 鼠标悬停提示只显示百分比（不再带 tokens / 模型名等说明） */
+  const tip = `${percentLabel}%`;
+  $("#memoryPercent").textContent = `${percentLabel}%`;
+  $("#memoryPercent").title = tip;
+  $("#memoryBar").style.width = `${percent}%`;
+  $("#collapsedBar").style.width = `${percent}%`;
+  // 侧边栏导航项 + 控制器卡片头部：两个圈形进度条
+  updateRing($("#navControllerRing"), $("#navRingBar"), percent, tip);
+  updateRing($("#collapsedPercent"), $("#collapsedRingBar"), percent, tip);
+  $("#messageCount").textContent = state.messages.length;
+}
+
+function renderMessages(options) {
+  const forceBottom = options?.bottom === true;
+  syncNavSelection();
+  updateWorkspace();
+  messagesEl.innerHTML = state.messages.map((item, index) => {
+    const isUser = item.role === "user";
+    /* AI 名字优先用「发送那一刻记下的显示名」（modelLabel）：
+       之后换模型、改模型目录都不会改写老气泡上的名字 */
+    const meta = isUser ? senderLabel(item) : (item.modelLabel || modelLabel(item.model || state.model));
+    const uid = isUser ? senderIdOf(item) : "";
+    const avatar = isUser
+      ? `<span class="message-avatar" title="${escapeHtml(uid ? `${meta} · ${uid}` : meta)}">${userAvatarMarkup(currentUser())}</span>`
+      : `<span class="message-avatar ai" title="${escapeHtml(`${meta}${item.model ? ` · ${item.model}` : ""}`)}"><img src="${escapeHtml(AI_AVATAR_SRC)}" alt=""></span>`;
+    // AI 的正文会把 ```代码块``` 渲染成「文件预览」，所以走单独的函数
+    const body = isUser ? escapeHtml(item.content) : assistantContentMarkup(item, index);
+    // 交付小卡牌（保存到本机）挂在气泡外面，不塞进聊天气泡里
+    const tray = isUser ? "" : assistantDeliverTrayMarkup(item, index);
+    /* 名字 / id 独立于气泡之外：放在气泡正上方，加粗放大（样式见 app.css 的 .message-meta）。
+       鼠标悬停可以看到更完整的身份：用户是「昵称 · 账号 id」，AI 是「模型名 · 模型 id」。 */
+    const metaTitle = isUser
+      ? (uid ? ` title="${escapeHtml(`${meta} · ${uid}`)}"` : "")
+      : ` title="${escapeHtml(`${meta}${item.model ? ` · ${item.model}` : ""}`)}"`;
+    return `
+    <article class="message ${isUser ? "user" : "assistant"}">
+      ${avatar}
+      <div class="message-body">
+        <span class="message-meta"${metaTitle}>${escapeHtml(meta)}</span>
+        <div class="bubble">${messageAttachmentsMarkup(item)}${body}</div>
+        ${tray}
+      </div>
+    </article>`;
+  }).join("");
+
+  if (state.thinkingVisible) {
+    const collapsedClass = state.thinkingCollapsed ? "is-collapsed" : "";
+    const marker = state.thinkingDone ? '<span class="thinking-check">✓</span>' : '<span class="thinking-orbit"></span>';
+    const tail = state.thinkingDone ? '<span class="thinking-done">已完成</span>' : '<span class="thinking-dots">···</span>';
+    messagesEl.insertAdjacentHTML("beforeend", `
+      <div class="thinking-card ${collapsedClass}">
+        <div class="thinking-title">${marker}<strong>思考过程 · 阶段记录</strong>${tail}</div>
+        <div class="thinking-lines">${state.thinking.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
+        <button class="thinking-toggle" type="button">${state.thinkingCollapsed ? "展开思考过程" : "收起思考过程"}</button>
+      </div>`);
+    const thinkingCard = messagesEl.querySelector(".thinking-card");
+    thinkingCard?.querySelector(".thinking-toggle")?.addEventListener("click", () => {
+      state.thinkingCollapsed = !state.thinkingCollapsed;
+      thinkingCard.classList.toggle("is-collapsed", state.thinkingCollapsed);
+      thinkingCard.querySelector(".thinking-toggle").textContent = state.thinkingCollapsed ? "展开思考过程" : "收起思考过程";
+    });
+  }
+
+  updateMemoryMeters();
+  if (state.messages.length) {
+    if (forceBottom) messagesPinned = true;   // 切会话 / 删会话 → 从头看最新，允许强制到底
+    scrollMessagesToBottom(forceBottom);      // 生成中的重渲染：只有贴底才跟随
+  }
+  updateScrollLatestHint();
+}
+
+function renderModels() {
+  modelSelect.innerHTML = state.models.map((model) => `
+    <option value="${escapeHtml(model.id)}" ${model.available ? "" : "disabled"}>
+      ${escapeHtml(model.label)}${model.available ? "" : "（未配置）"}
+    </option>`).join("");
+  const available = state.models.find((model) => model.available);
+  state.model = state.model && state.models.some((model) => model.id === state.model && model.available)
+    ? state.model
+    : available?.id || "";
+  modelSelect.value = state.model;
+  modelSelect.title = available ? `当前模型：${available.label}` : "暂无可用模型";
+  $("#activeModel").textContent = state.model || "未配置";
+  applyModelSelectTint();
+}
+
+async function loadConfig() {
+  try {
+    const response = await fetch("/api/config");
+    const config = await response.json();
+    state.models = config.models || [];
+    state.model = state.model || config.model || "";
+    // 思考强度档位表：后端是唯一数据源，前端滑块/节点/文案都按它渲染
+    if (Array.isArray(config.effort_levels) && config.effort_levels.length) {
+      state.effortLevels = config.effort_levels;
+      if (config.default_effort_level && !localStorage.getItem(EFFORT_LEVEL_KEY)) {
+        state.effortLevel = Number(config.default_effort_level) || state.effortLevel;
+      }
+      renderMindUI(false);
+    }
+    $("#connectionLabel").textContent = config.configured ? "已连接" : "等待配置";
+    renderModels();
+    renderMessages();   // 已知模型名后，把气泡上的 AI 名字刷新成当前模型
+  } catch (error) {
+    $("#connectionLabel").textContent = "读取失败";
+    $("#activeModel").textContent = "未配置";
+    console.warn("配置读取失败", error);
+  }
+}
+
+/* ========== 对话发送 ==========
+   ★ 生成中的回答按会话分开存（activeChatStreams，见文件顶部说明）：
+     生成中切到别的会话 / 刷新页面都不会再吞掉回答。 */
+async function sendMessage(message, attachments) {
+  const files = Array.isArray(attachments) ? attachments : [];
+  if (foregroundStream()) return;   // 当前会话还在生成（输入框此时也是锁着的），防重复发送
+  const sessionId = state.sessionId;
+  state.requestError = "";
+  state.thinking = ["已收到问题，正在连接当前模型"];
+  state.thinkingVisible = true;
+  state.thinkingCollapsed = false;
+  state.thinkingDone = false;
+  const sender = currentUser();
+  state.messages.push({
+    role: "user",
+    content: message,
+    // 附件只存显示需要的字段（名字/类型/大小/缩略图），文本内容由后端拼接后进模型
+    attachments: files.map((item) => ({ name: item.name, kind: item.kind, size: item.size, preview: item.preview || "" })),
+    // 记下发送时的身份：登录后就是用户 id，没登录才算访客
+    sender: sender ? { id: sender.id, name: sender.name, avatar: sender.avatar || "" } : { id: "", name: "访客" },
+  });
+  // 记下这次回答用的是哪个模型（id + 当时的显示名），气泡上的名字以后再也不会变
+  const responseMessage = { role: "assistant", content: "", streaming: true, model: state.model, modelLabel: modelLabel(state.model), effort: state.effortLevel };
+  state.messages.push(responseMessage);
+  /* 这段会话的「流上下文」：切到别的会话后它还在，回答继续攒进 responseMessage，
+     生成完写回本会话自己的存档 —— 只要这段会话没被删，回答就不会丢。 */
+  const stream = {
+    sessionId,
+    historyId: state.historyId,
+    messages: state.messages,
+    summary: state.summary,
+    message: responseMessage,
+    thinking: state.thinking,
+    answer: "",
+    usage: null,
+    effort: null,
+    cancelled: false,
+    finished: false,
+    controller: new AbortController(),
   };
+  activeChatStreams.set(sessionId, stream);
+  renderMessages({ bottom: true });
+  syncComposer();
+  saveState();
+  // ★ 第一次输入后立即建档；promise 挂在流上，后台结束时用同一个 historyId 更新同一条存档
+  stream.persistPromise = persistConversation(stream);
 
-  function $(s, el) { return (el || document).querySelector(s); }
-  function $$(s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); }
-  function hint(text, ms) { if (window.LabHost && LabHost.hint) LabHost.hint(text, ms); }
-
-  function mod12(p) { return ((p % 12) + 12) % 12; }
-
-  /* ── 音高工具（与 NoteMapper.cs 一致） ── */
-  function pitchName(p) { return NAME12[mod12(p)] + (Math.floor(p / 12) - 1); }
-  function regOf(p, b) {
-    var d = Math.floor(p / 12) - 1 - b;
-    return d <= -1 ? "低" : d === 0 ? "中" : d === 1 ? "高" : "高高";
-  }
-  function degName(p) { return DEG[mod12(p)]; }
-
-  function keyOfPitch(pitch) {
-    var pc = mod12(pitch);
-    var idx = DIATONIC_INDEX[pc];
-    if (idx === undefined) { pc = mod12(pc - 1); idx = DIATONIC_INDEX[pc]; }
-    return KEY_LIST[idx];
-  }
-  function isSharpPitch(pitch) { return SHARP_PC.indexOf(mod12(pitch)) >= 0; }
-
-  /* 某个音高在基准=baseOct 下是否可演奏：基准±1 八度 + 高高音 do/#do */
-  function reachable(pitch, baseOct) {
-    var d = Math.floor(pitch / 12) - 1 - baseOct;
-    if (d >= -1 && d <= 1) return true;
-    if (d === 2) { var pc = mod12(pitch); return pc === 0 || pc === 1; }
-    return false;
-  }
-
-  /* 自动选出基准八度：使可演奏区容纳最多音符（均值破平局） */
-  function autoBaseOctave(pitches) {
-    if (!pitches.length) return 4;
-    var minO = 1e9, maxO = -1e9, sumO = 0;
-    pitches.forEach(function (p) {
-      var o = Math.floor(p / 12) - 1;
-      if (o < minO) minO = o;
-      if (o > maxO) maxO = o;
-      sumO += o;
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: stream.controller.signal,
+      body: JSON.stringify({
+        session_id: sessionId,
+        message,
+        model: state.model,
+        effort_level: state.effortLevel,
+        // 拖进来的文件：文本内容交给后端拼进消息（图片仅提示文件名）
+        attachments: files.map((item) => ({ name: item.name, kind: item.kind, size: item.size, text: item.text || "" })),
+      }),
     });
-    var meanO = sumO / pitches.length;
-    var bestB = minO, bestPlay = -1;
-    for (var b = minO; b <= maxO; b++) {
-      var play = 0;
-      pitches.forEach(function (p) { if (reachable(p, b)) play++; });
-      if (play > bestPlay || (play === bestPlay && Math.abs(b - meanO) < Math.abs(bestB - meanO))) {
-        bestPlay = play; bestB = b;
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || "请求失败");
+    }
+    if (!response.body) throw new Error("浏览器不支持流式响应");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        await handleStreamEvent(stream, JSON.parse(line));
       }
+      if (done) break;
     }
-    return bestB;
+    await finishChatStream(stream);
+  } catch (error) {
+    failChatStream(stream, error);
   }
+}
 
-  /* 音高 → {key, sharp, slot(-1低/0基准/1高/2高高), inRange, skipReason, pitch} */
-  function mapNote(midi, baseOct) {
-    if (midi < 0 || midi > 127) {
-      return { key: " ", sharp: false, slot: 0, inRange: false, skipReason: "移调后超出 MIDI 音域" };
+/* 一条流事件（status / delta / file / image / done / error）：
+   前台流实时打字 + 重渲染；后台流只往 message 里攒内容，绝不碰当前界面。 */
+async function handleStreamEvent(stream, event) {
+  const isCurrent = () => stream.sessionId === state.sessionId;
+  if (event.event === "status") {
+    stream.thinking.push(event.label);
+    if (isCurrent()) {
+      if (state.thinking.length > 3) state.thinkingCollapsed = true;
+      renderMessages();
     }
-    var oct = Math.floor(midi / 12) - 1;
-    var d = oct - baseOct;
-    var pc = mod12(midi);
-    if (d < -1 || d > 2) {
-      return { key: keyOfPitch(midi), sharp: isSharpPitch(midi), slot: 0, inRange: false,
-               skipReason: "音区超出口琴可演奏范围（第" + oct + "八度）" };
-    }
-    if (d === 2) {
-      if (pc !== 0 && pc !== 1) {
-        return { key: TOP_KEY, sharp: pc === 1, slot: 2, inRange: false,
-                 skipReason: "最高只能到 高高音#do" };
-      }
-      return { key: TOP_KEY, sharp: pc === 1, slot: 2, inRange: true, pitch: midi };
-    }
-    return { key: keyOfPitch(midi), sharp: isSharpPitch(midi), slot: d, inRange: true, pitch: midi };
+    return;
   }
-
-  function modInfo(slot, sharp) {
-    for (var i = 0; i < MOD_INFO.length; i++) {
-      if (MOD_INFO[i].slot === slot && MOD_INFO[i].sharp === !!sharp) return MOD_INFO[i];
-    }
-    return MOD_INFO[0];
-  }
-
-  /* ── 简谱记法（txt 音色格式）：1234567i = z x c v b n m ,；【】=低八度左键；{}=高八度右键；#=升半音中键 ── */
-  var JP_KEY = { "1": "z", "2": "x", "3": "c", "4": "v", "5": "b", "6": "n", "7": "m", "i": "," };
-  var KEY_JP = { z: "1", x: "2", c: "3", v: "4", b: "5", n: "6", m: "7", ",": "i" };
-  function jianpuOf(key, slot, sharp) {
-    var s = (sharp ? "#" : "") + KEY_JP[key];
-    if (slot === -1) return "【" + s + "】";
-    if (slot === 1) return "{" + s + "}";
-    return s;
-  }
-  function parseJianpuToken(tok) {
-    if (!tok) return null;
-    var t = String(tok).trim();
-    if (!t) return null;
-    var slot = 0, sharp = 0;
-    if (t.charAt(0) === "【" && t.charAt(t.length - 1) === "】") { slot = -1; t = t.slice(1, -1); }
-    else if (t.charAt(0) === "{" && t.charAt(t.length - 1) === "}") { slot = 1; t = t.slice(1, -1); }
-    if (t.charAt(0) === "#") { sharp = 1; t = t.slice(1); }
-    var key = JP_KEY[t];
-    if (!key) return null;
-    return { key: key, slot: slot, sharp: sharp };
-  }
-  function jianpuToMidi(key, slot, sharp, baseOct) {
-    var pc = (KEY_SEM[key] !== undefined ? KEY_SEM[key] : 0) + sharp;
-    var oct = baseOct + slot + (key === TOP_KEY ? 1 : 0);
-    return (oct + 1) * 12 + pc;
-  }
-  function parsePitchName(s) {
-    var m = /^([A-Ga-g])([#b]?)(-?\d+)$/.exec(String(s).trim());
-    if (!m) return null;
-    var letter = m[1].toUpperCase();
-    var acc = m[2];
-    var oct = parseInt(m[3], 10);
-    var pc = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[letter];
-    if (acc === "#") pc += 1;
-    else if (acc === "b") pc -= 1;
-    return (oct + 1) * 12 + pc;
-  }
-
-  /* ── 音高检测：归一化自相关 ── */
-  function corrAt(buf, lag) {
-    var N = buf.length, num = 0, a = 0, b = 0;
-    for (var i = 0; i < N - lag; i++) {
-      var x = buf[i], y = buf[i + lag];
-      num += x * y; a += x * x; b += y * y;
-    }
-    return num / Math.sqrt(a * b + 1e-9);
-  }
-
-  function detectPitch(buf, sr) {
-    var N = buf.length, i, s = 0;
-    for (i = 0; i < N; i++) { var v = buf[i]; s += v * v; }
-    if (Math.sqrt(s / N) < 0.005) return 0;
-    var minLag = Math.floor(sr / 2000), maxLag = Math.floor(sr / 55);
-    var bestLag = -1, best = 0;
-    for (var lag = minLag; lag <= maxLag; lag++) {
-      var c = corrAt(buf, lag);
-      if (c > best) { best = c; bestLag = lag; }
-    }
-    if (bestLag < 0 || best < 0.80) return 0;
-    var c1 = bestLag > minLag ? corrAt(buf, bestLag - 1) : 0;
-    var c2 = best;
-    var c3 = bestLag < maxLag ? corrAt(buf, bestLag + 1) : 0;
-    var denom = c1 - 2 * c2 + c3;
-    var delta = Math.abs(denom) > 1e-9 ? 0.5 * (c1 - c3) / denom : 0;
-    return sr / (bestLag + delta);
-  }
-
-  function freqToMidi(f) { return 69 + 12 * Math.log2(f / 440); }
-
-  /* ── 整段分析：保留原始音高（不做键位折叠） ── */
-  function analyze(buffer, onProgress) {
-    return new Promise(function (resolve) {
-      var ch = buffer.numberOfChannels, len = buffer.length, i, c;
-      var mono = new Float32Array(len);
-      for (c = 0; c < ch; c++) {
-        var d = buffer.getChannelData(c);
-        for (i = 0; i < len; i++) mono[i] += d[i] / ch;
-      }
-      var SR = buffer.sampleRate, TARGET = 8000;
-      var step = SR / TARGET, dl = Math.floor(len / step);
-      var down = new Float32Array(dl);
-      for (i = 0; i < dl; i++) down[i] = mono[Math.floor(i * step)];
-
-      var MAX = TARGET * 180;
-      state.truncated = dl > MAX;
-      if (state.truncated) down = down.subarray(0, MAX);
-
-      var FRAME = 2048, HOP = 512;
-      var frameCount = Math.floor((down.length - FRAME) / HOP) + 1;
-      if (frameCount < 1) { resolve([]); return; }
-
-      var frames = new Array(frameCount);
-      var idx = 0, BATCH = 80;
-      var totalSec = (frameCount * HOP) / TARGET;
-
-      function stepBatch() {
-        var end = Math.min(idx + BATCH, frameCount);
-        for (var j = idx; j < end; j++) {
-          var off = j * HOP;
-          frames[j] = detectPitch(down.subarray(off, off + FRAME), TARGET);
-        }
-        idx = end;
-        if (onProgress) onProgress(idx / frameCount, "识别旋律 " + (idx * HOP / TARGET).toFixed(0) + "s / " + totalSec.toFixed(0) + "s");
-        if (idx < frameCount) { setTimeout(stepBatch, 0); return; }
-
-        var notes = [], cur = null;
-        for (var k = 0; k < frameCount; k++) {
-          var f = frames[k], t = k * HOP / TARGET;
-          if (f > 0) {
-            var midi = freqToMidi(f);
-            if (cur && Math.abs(cur.midi - midi) < 0.5 && (t - cur.end) < 0.20) {
-              cur.end = t + HOP / TARGET;
-              cur.dur = cur.end - cur.start;
-              cur.freq = f;
-              cur.midi = (cur.midi * (cur.dur - HOP / TARGET) / cur.dur) + (midi * HOP / TARGET / cur.dur);
-            } else {
-              if (cur) notes.push(cur);
-              cur = { midi: midi, start: t, end: t + HOP / TARGET, dur: HOP / TARGET, freq: f };
-            }
-          } else {
-            if (cur) { notes.push(cur); cur = null; }
-          }
-        }
-        if (cur) notes.push(cur);
-        notes = notes.filter(function (n) { return n.dur >= 0.07; });
-        /* 计算每个音符的间隔（到下一音符的开始间隔，ms；最后一个取自身时长） */
-        notes.forEach(function (n, i) {
-          if (i < notes.length - 1) {
-            n.gap = Math.max(50, Math.round((notes[i + 1].start - n.start) * 1000));
-          } else {
-            n.gap = Math.max(100, Math.round(n.dur * 1000));
-          }
-        });
-        resolve(notes);
-      }
-      stepBatch();
-    });
-  }
-
-  /* ── 真实口琴音色（Hohner Silverstar · CC0 公共领域） ── */
-  var audioCtx = null, activeSources = [], playTimers = [];
-  var SOUND_BASE = "/assets/lab/sounds/";      // 内置采样目录（060=C4 / 064=E4 / 067=G4 / 072=C5）
-  var SOUND_SAMPLES = [60, 64, 67, 72];        // 内置采样对应的 MIDI
-  var KEY_FILE = { z: "z", x: "x", c: "c", v: "v", b: "b", n: "n", m: "m", ",": "comma" };
-  var hkBaseSamples = {};   // midi -> AudioBuffer（内置）
-  var hkKeySamples = {};    // keyIdx -> AudioBuffer（用户每键位音色）
-
-  function ensureAudio() {
-    if (!audioCtx) {
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      audioCtx = new AC();
-    }
-    if (audioCtx.state === "suspended" && audioCtx.resume) audioCtx.resume();
-    return audioCtx;
-  }
-
-  function setSoundStatus(txt) {
-    var el = $("#hkSoundStatus");
-    if (el) el.textContent = txt;
-  }
-
-  function loadAudioFile(url) {
-    return fetch(url, { cache: "no-store" }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.arrayBuffer();
-    }).then(function (ab) {
-      var ctx = ensureAudio();
-      if (!ctx) return null;
-      return new Promise(function (res, rej) { ctx.decodeAudioData(ab, res, rej); });
-    });
-  }
-
-  /* 加载内置采样 + 用户每键位音色（用户目录里的 z/x/c/v/b/n/m/comma.* 优先） */
-  function loadHarmonicaSounds(baseDir) {
-    hkBaseSamples = {};
-    hkKeySamples = {};
-    var ctx = ensureAudio();
-    if (!ctx) { setSoundStatus("浏览器不支持 WebAudio 试听"); return; }
-    setSoundStatus("真实口琴采样：加载中…");
-    var dir = String(baseDir || SOUND_BASE).replace(/[\\/]?$/, "/");
-    var jobs = [];
-    SOUND_SAMPLES.forEach(function (m) {
-      var fname = ("00" + m).slice(-3) + ".wav";   // 采样文件为三位补零命名：060.wav / 064.wav ...
-      jobs.push(loadAudioFile(SOUND_BASE + fname).then(function (b) {
-        if (b) hkBaseSamples[m] = b;
-      }).catch(function () { }));
-    });
-    ["z", "x", "c", "v", "b", "n", "m", "comma"].forEach(function (name, idx) {
-      ["mp3", "wav", "ogg", "m4a"].forEach(function (ext) {
-        jobs.push(loadAudioFile(dir + name + "." + ext).then(function (b) {
-          if (b) hkKeySamples[idx] = b;
-        }).catch(function () { }));
-      });
-    });
-    Promise.all(jobs).then(function () {
-      var nBase = 0, nKey = 0, keys = [];
-      for (var k in hkBaseSamples) nBase++;
-      for (var kk in hkKeySamples) { nKey++; keys.push(KEY_LIST[Number(kk)] || ","); }
-      if (nKey > 0) {
-        setSoundStatus("自定义键位音色 " + nKey + "/8（" + keys.join(" ") + "）· 内置采样 " + nBase + " 个备用");
-      } else if (nBase > 0) {
-        setSoundStatus("内置真实口琴采样 " + nBase + " 个就绪（C4/E4/G4/C5 · CC0）");
-      } else {
-        setSoundStatus("口琴采样加载失败，试听改用合成音色兜底");
-      }
-    });
-  }
-
-  /* 选取音色：优先用户每键位音色（键位自然音高精确匹配），否则最近内置采样 + 变速。
-     变速范围 ±2 八度（0.25~5.0 倍），保证覆盖游戏全部可演奏区（基准±1 八度 + 高高音 do/#do，
-     即从低八度最低 C 到高高音#do），高音区不再被压成同一个音。 */
-  function pickSample(midi) {
-    for (var i = 0; i < KEY_LIST.length + 1; i++) {
-      var ch = i < KEY_LIST.length ? KEY_LIST[i] : TOP_KEY;
-      var sem = i < KEY_LIST.length ? KEY_SEM[ch] : 0;
-      var oct = Math.floor(midi / 12) - 1;
-      var nat = oct * 12 + sem;
-      if (midi === nat && hkKeySamples[i]) return { buf: hkKeySamples[i], rate: 1 };
-    }
-    var mids = [];
-    for (var m in hkBaseSamples) mids.push(Number(m));
-    if (!mids.length) return null;
-    var best = mids[0];
-    for (var j = 1; j < mids.length; j++) {
-      if (Math.abs(mids[j] - midi) < Math.abs(best - midi)) best = mids[j];
-    }
-    var rate = Math.pow(2, (midi - best) / 12);
-    rate = Math.max(0.25, Math.min(5.0, rate));
-    return { buf: hkBaseSamples[best], rate: rate };
-  }
-
-  /* 合成兜底（采样不可用时） */
-  function playSynthFallback(midi, dur, when, vol) {
-    var ctx = audioCtx;
-    if (!ctx) return;
-    var v = (vol === undefined) ? hkVolume : vol;
-    var t0 = when || (ctx.currentTime + 0.03);
-    var freq = 440 * Math.pow(2, (midi - 69) / 12);
-    var g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(0.5 * v, t0 + 0.015);
-    g.gain.exponentialRampToValueAtTime(0.2 * v, t0 + 0.14);
-    g.gain.setValueAtTime(0.2 * v, t0 + Math.max(0.05, dur - 0.06));
-    g.gain.linearRampToValueAtTime(0.0001, t0 + dur + 0.08);
-    var lp = ctx.createBiquadFilter();
-    lp.type = "lowpass"; lp.frequency.value = freq * 4; lp.Q.value = 0.8;
-    var o1 = ctx.createOscillator(); o1.type = "sawtooth"; o1.frequency.value = freq;
-    var o2 = ctx.createOscillator(); o2.type = "triangle"; o2.frequency.value = freq * 2;
-    var g2 = ctx.createGain(); g2.gain.value = 0.28;
-    o1.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g); g.connect(ctx.destination);
-    o1.start(t0); o2.start(t0);
-    o1.stop(t0 + dur + 0.1); o2.stop(t0 + dur + 0.1);
-    activeSources.push(o1, o2);
-  }
-
-  var hkVolume = 0.2;  /* 口琴演奏音量 0~1（默认 20%） */
-
-  function playHarmonicaNote(midi, dur, when) {
-    var ctx = ensureAudio();
-    if (!ctx) return;
-    var vol = hkVolume;
-    var src = pickSample(midi);
-    if (!src) { playSynthFallback(midi, dur || 0.5, when, vol); return; }
-    var t0 = when || (ctx.currentTime + 0.03);
-    var d = Math.max(0.18, dur || 0.5);
-    var s = ctx.createBufferSource();
-    s.buffer = src.buf;
-    s.playbackRate.value = src.rate;
-    var g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.linearRampToValueAtTime(0.9 * vol, t0 + 0.012);
-    g.gain.setValueAtTime(0.9 * vol, t0 + Math.max(0.04, d - 0.05));
-    g.gain.linearRampToValueAtTime(0.0001, t0 + d + 0.15);
-    s.connect(g); g.connect(ctx.destination);
-    s.start(t0); s.stop(t0 + d + 0.2);
-    activeSources.push(s);
-  }
-
-  /* ── 渲染 ── */
-  function clearHighlight() {
-    $$(".hk-note.hk-note-playing").forEach(function (el) { el.classList.remove("hk-note-playing"); });
-  }
-  function highlightNote(idx) {
-    clearHighlight();
-    var el = document.querySelector('.hk-note[data-index="' + idx + '"]');
-    if (el) el.classList.add("hk-note-playing");
-  }
-
-  function renderScore() {
-    var score = $("#hkScore");
-    score.innerHTML = "";
-    var notes = state.notes;
-    if (!notes.length) {
-      score.innerHTML = '<div class="hk-empty-tip">没有识别到清晰的旋律音符 —— 试试更“干净”的人声或器乐旋律</div>';
-      $("#hkResultMeta").textContent = "未识别到音符";
-      $("#hkNoteCount").textContent = "0 个音符";
-      return;
-    }
-    var pitches = notes.map(function (n) { return Math.round(n.midi); });
-    state.usedBaseOct = state.baseOct === "auto" ? autoBaseOctave(pitches) : state.baseOct;
-    var baseOct = state.usedBaseOct;
-
-    var frag = document.createDocumentFragment();
-    var skipped = 0;
-    notes.forEach(function (n, i) {
-      var m = mapNote(Math.round(n.midi), baseOct);
-      var mod = modInfo(m.slot, m.sharp);
-
-      var el = document.createElement("div");
-      el.className = "hk-note" + (m.inRange ? "" : " hk-note-skip");
-      el.dataset.index = i;
-      el.dataset.pitch = m.pitch || 0;
-
-      var wrap = document.createElement("div");
-      wrap.className = "hk-keywrap" + (m.slot === 2 ? " hk-keywrap-top" : m.slot > 0 ? " hk-high" : m.slot < 0 ? " hk-low" : "");
-      var ch = document.createElement("span");
-      ch.className = "hk-keychar";
-      ch.textContent = m.key === "," ? "，" : m.key.toUpperCase();
-      wrap.appendChild(ch);
-
-      var modEl = document.createElement("span");
-      modEl.className = "hk-mod " + mod.cls;
-      modEl.textContent = m.inRange ? mod.label : "跳过";
-      modEl.title = m.inRange ? mod.mouse : m.skipReason;
-
-      var nm = document.createElement("span");
-      nm.className = "hk-note-name";
-      nm.textContent = m.inRange ? (jianpuOf(m.key, m.slot, m.sharp) + " · " + regOf(m.pitch, baseOct) + degName(m.pitch) + " " + pitchName(m.pitch)) : "—";
-
-      var dr = document.createElement("span");
-      dr.className = "hk-note-dur";
-      dr.textContent = "↳ " + n.gap + "ms";
-      dr.title = "到下一音的间隔 " + n.gap + "ms（本音时长 " + (n.dur * 1000).toFixed(0) + "ms）";
-
-      el.appendChild(wrap); el.appendChild(modEl); el.appendChild(nm); el.appendChild(dr);
-      el.title = "第 " + (i + 1) + " 音 · 简谱 " + (m.inRange ? jianpuOf(m.key, m.slot, m.sharp) : "—") +
-        " · 按键 " + (m.key === "," ? "，[高音do]" : m.key) +
-        (m.inRange ? " · " + mod.label + "（" + mod.mouse + "）· " + pitchName(m.pitch) + "（" + regOf(m.pitch, baseOct) + "音区）" : " · " + m.skipReason) +
-        " · 间隔 " + n.gap + "ms（时长 " + (n.dur * 1000).toFixed(0) + "ms）";
-      if (!m.inRange) skipped++;
-      frag.appendChild(el);
-    });
-    score.appendChild(frag);
-
-    var total = (notes[notes.length - 1].end - notes[0].start).toFixed(1);
-    $("#hkResultMeta").textContent = "识别到 " + notes.length + " 个音符 · 旋律时长约 " + total + "s · 基准八度 C" + baseOct +
-      (state.baseOct === "auto" ? "（自动选择）" : "（手动）") + " · 键位 z x c v b n m ," +
-      (skipped ? " · 跳过 " + skipped + " 音" : "") +
-      (state.truncated ? "（仅前 3 分钟）" : "");
-    $("#hkNoteCount").textContent = notes.length + " 个音符" + (skipped ? "（跳过 " + skipped + "）" : "");
-    $("#hkKey").textContent = "基准八度 C" + baseOct;
-    updateOctButtons();
-  }
-
-  function updateOctButtons() {
-    $$(".hk-octbtn").forEach(function (b) {
-      b.classList.toggle("active", String(state.baseOct) === b.dataset.oct);
-    });
-  }
-
-  function stopScore() {
-    if (audioCtx) {
-      var now = audioCtx.currentTime;
-      activeSources.forEach(function (s) { try { s.stop(now); } catch (e) { } });
-    }
-    activeSources = [];
-    playTimers.forEach(clearTimeout); playTimers = [];
-    clearHighlight();
-    state.playing = false;
-    updatePlayButtons();
-  }
-
-  function playScore() {
-    stopScore();
-    var notes = state.notes;
-    if (!notes.length) return;
-    var ctx = ensureAudio();
-    if (!ctx) return;
-    var pitches = notes.map(function (n) { return Math.round(n.midi); });
-    state.usedBaseOct = state.baseOct === "auto" ? autoBaseOctave(pitches) : state.baseOct;
-    var baseOct = state.usedBaseOct;
-    var first = notes[0].start, startAt = ctx.currentTime + 0.15;
-    var played = 0;
-    for (var i = 0; i < notes.length; i++) {
-      var n = notes[i];
-      var m = mapNote(Math.round(n.midi), baseOct);
-      if (!m.inRange) continue;
-      playHarmonicaNote(m.pitch, Math.max(0.16, n.dur), startAt + (n.start - first));
-      (function (idx, offMs) {
-        playTimers.push(setTimeout(function () { highlightNote(idx); }, offMs));
-      })(i, (n.start - first) * 1000 + 60);
-      played++;
-    }
-    playTimers.push(setTimeout(function () { clearHighlight(); }, ((notes[notes.length - 1].end - first) * 1000) + 400));
-    state.playing = true;
-    updatePlayButtons();
-    hint("试听中：" + played + " 个可演奏音符（跳过 " + (notes.length - played) + "）", 2400);
-  }
-
-  function updatePlayButtons() {
-    $("#hkPlay").disabled = state.playing;
-    $("#hkStop").disabled = !state.playing;
-  }
-
-  /* ── 文件处理 ── */
-  function formatSize(b) {
-    if (b < 1024) return b + " B";
-    if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
-    return (b / 1048576).toFixed(2) + " MB";
-  }
-
-  function resetResult() {
-    stopScore();
-    state.notes = [];
-    state.baseOct = "auto";
-    $("#hkResult").hidden = true;
-  }
-
-  function setFile(file) {
-    if (!file) return;
-    var ok = /^audio\//.test(file.type) || /\.(mp3|wav|m4a|ogg|flac|aac|webm|opus|wma)$/i.test(file.name);
-    if (!ok) { hint("请选择音频文件（mp3 / wav / m4a / ogg 等）", 3200); return; }
-    state.file = file;
-    state.audioBuffer = null;
-    $("#hkFileName").textContent = file.name;
-    $("#hkFileSize").textContent = formatSize(file.size);
-    if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
-    state.objectUrl = URL.createObjectURL(file);
-    $("#hkPlayer").src = state.objectUrl;
-    $("#hkFilebar").hidden = false;
-    $("#hkDrop").hidden = true;
-    $("#hkParse").disabled = false;
-    $("#hkCtaSub").textContent = "点击「开始解析」，自动识别旋律并按三角洲口琴体系映射";
-    resetResult();
-  }
-
-  function decode(buf) {
-    try {
-      var p = audioCtx.decodeAudioData(buf);
-      if (p && typeof p.then === "function") return p;
-    } catch (e) { }
-    return new Promise(function (res, rej) { audioCtx.decodeAudioData(buf, res, rej); });
-  }
-
-  function startParse() {
-    var file = state.file;
-    if (!file) return;
-    resetResult();
-    var btn = $("#hkParse");
-    btn.disabled = true;
-    $("#hkProgress").hidden = false;
-    setProgress(0, "解码中…");
-
-    var reader = new FileReader();
-    reader.onload = function () {
-      ensureAudio();
-      decode(reader.result).then(function (buf) {
-        state.audioBuffer = buf;
-        analyze(buf, setProgress).then(function (notes) {
-          state.notes = notes;
-          btn.disabled = false;
-          $("#hkProgress").hidden = true;
-          $("#hkResult").hidden = false;
-          renderScore();
-          $("#hkResult").scrollIntoView({ behavior: "smooth", block: "start" });
-          if (notes.length) hint("解析完成：" + notes.length + " 个音符", 2600);
-          else hint("没识别到清晰旋律，换一段试试", 3200);
-        });
-      }, function () {
-        btn.disabled = false;
-        $("#hkProgress").hidden = true;
-        hint("解码失败：文件可能已损坏或格式不支持", 3200);
-      });
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  function setProgress(p, txt) {
-    var bar = $("#hkProgressBar");
-    if (bar) bar.style.setProperty("width", Math.round(p * 100) + "%", "important");
-    var t = $("#hkProgressText");
-    if (t) t.textContent = txt || "解析中…";
-  }
-
-  /* ── 导出曲谱（v2.1 简谱·持续·间隔格式：("1","200ms","100ms","2","150ms","80ms")） ── */
-  function exportScore() {
-    var notes = state.notes;
-    if (!notes.length) { hint("还没有可导出的曲谱", 2200); return; }
-    var name = ($("#hkScoreName") && $("#hkScoreName").value.trim()) || "未命名曲目";
-    var pitches = notes.map(function (n) { return Math.round(n.midi); });
-    state.usedBaseOct = state.baseOct === "auto" ? autoBaseOctave(pitches) : state.baseOct;
-    var baseOct = state.usedBaseOct;
-
-    /* 只导出可演奏音，并按相邻可演奏音重新计算间隔 */
-    var playable = [];
-    notes.forEach(function (n) {
-      var m = mapNote(Math.round(n.midi), baseOct);
-      if (m.inRange) playable.push({ n: n, m: m });
-    });
-    if (!playable.length) { hint("没有可演奏的音符（全部超出可演奏范围），无法导出", 3200); return; }
-
-    var pairs = [];
-    for (var i = 0; i < playable.length; i++) {
-      var p = playable[i];
-      var dur = Math.max(50, Math.round(p.n.dur * 1000));
-      var gap;
-      if (i < playable.length - 1) {
-        gap = Math.max(50, Math.round((playable[i + 1].n.start - p.n.start) * 1000));
-      } else {
-        gap = Math.max(100, Math.round(p.n.dur * 1000));
-      }
-      var jp = jianpuOf(p.m.key, p.m.slot, p.m.sharp);
-      pairs.push('"' + jp + '","' + dur + 'ms","' + gap + 'ms"');
-    }
-    var line = "(" + pairs.join(",") + ")";
-
-    var lines = [
-      "# 口琴谱 v2.1 · 简谱·持续·间隔（拖入网页「乐谱视窗」可视化编辑 / 自动演奏）",
-      "曲名: " + name,
-      "基准八度: " + baseOct,
-      "# 每音三个值：音阶, 持续时间(ms), 到下一音间隔(ms)",
-      "# 记法：1234567i = do re mi fa sol la si 高音do（键 z x c v b n m ,）；【】=低八度（按住左键）；{}=高八度（按住右键）；#=升半音（按住中键）",
-      "# 示例：(\"1\",\"200ms\",\"100ms\",\"2\",\"150ms\",\"80ms\",\"【5】\",\"300ms\",\"120ms\",\"{i}\",\"400ms\",\"200ms\")",
-      line
-    ];
-    var text = lines.join("\n");
-    var blob = new Blob(["\ufeff" + text], { type: "text/plain;charset=utf-8" });
-    var a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name + ".txt";
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
-    hint("已导出 " + name + ".txt（" + playable.length + " 音 · 简谱·持续·间隔格式）", 3000);
-  }
-
-  /* ════════ 口琴按键测试台（依照《三角洲行动》测试台实现） ════════ */
-  var rig = {
-    baseOct: 5,        // 中音do 所在八度（测试台独立演示，默认 C5）
-    shift: 0,          // -1 左键 / 0 默认 / +1 右键
-    sharp: false,      // 中键
-    held: [],          // 正在按住的物理键（后按的优先，单音）
-  };
-  var rigNote = { osc: null, gain: null, pitch: 0, on: false };
-
-  function rigPitchFrom(key) {
-    var pc = KEY_SEM[key] !== undefined ? KEY_SEM[key] : 0;
-    var oct = (key === TOP_KEY) ? rig.baseOct + rig.shift + 1 : rig.baseOct + rig.shift;
-    var p = (oct + 1) * 12 + pc;
-    if (rig.sharp) p += 1;
-    return p;
-  }
-  function rigActiveKey() { return rig.held.length ? rig.held[rig.held.length - 1] : null; }
-  function rigPianoHighlight(p) {
-    $$("#rigPiano .pk").forEach(function (el) {
-      el.classList.toggle("on", p !== null && parseInt(el.dataset.p, 10) === p);
-    });
-  }
-  function rigRefresh() {
-    var key = rigActiveKey();
-    var combo = "";
-    if (key) {
-      var p = rigPitchFrom(key);
-      var reg = regOf(p, rig.baseOct);
-      $("#rigNowName").textContent = reg + degName(p) + "  " + pitchName(p);
-      var mods = [];
-      if (rig.shift === -1) mods.push("按住左键");
-      else if (rig.shift === 1) mods.push("按住右键");
-      if (rig.sharp) mods.push("中键(升半音)");
-      mods.push(key === "," ? "键[，]" : "键[" + key.toUpperCase() + "]");
-      combo = "按下 " + mods.join(" + ") + " = " + pitchName(p) + "（" + reg + "音区）";
-      rigPianoHighlight(p);
+  if (event.event === "delta") {
+    if (isCurrent()) {
+      state.thinkingVisible = false;
+      await typeAnswer(stream, event.text, event.fast);
     } else {
-      $("#rigNowName").textContent = "—";
-      combo = "等待按键…";
-      rigPianoHighlight(null);
+      stream.answer += event.text;   // 后台流：整段攒着，切回来直接看到
+      stream.message.content = stream.answer;
     }
-    $("#rigNowCombo").textContent = combo;
-    $("#lampL").classList.toggle("on-left", rig.shift === -1);
-    $("#lampR").classList.toggle("on-right", rig.shift === 1);
-    $("#lampM").classList.toggle("on-mid", rig.sharp);
-    $$("#rigKeys .gkey").forEach(function (el) {
-      el.classList.toggle("down", rig.held.indexOf(el.dataset.key) >= 0);
-    });
+    return;
   }
-  function rigVoiceStart(p) {
-    if ($("#rigMute").checked) return;
-    playHarmonicaNote(p, 0.5);
-    rigNote.pitch = p; rigNote.on = true;
+  if (event.event === "file") {
+    // AI 把文件写进了空间：在气泡外的小卡牌上挂一行（可打开 / 保存到本机）
+    stream.message.files = stream.message.files || [];
+    stream.message.files.push({ name: event.name, path: event.path, size: event.size });
+    if (isCurrent()) renderMessages();
+    return;
   }
-  function rigPressKey(key) {
-    if (swin.playing) swinStop(false);
-    ensureAudio();
-    if (rig.held.indexOf(key) < 0) rig.held.push(key);
-    rigVoiceStart(rigPitchFrom(key));
-    rigRefresh();
+  if (event.event === "image") {
+    // 文生图模型（Agnes 图片生成等）：把图片挂到这条回答上
+    stream.message.images = stream.message.images || [];
+    stream.message.images.push({ url: event.url, prompt: event.prompt || "", model: event.model || "" });
+    if (isCurrent()) renderMessages();
+    return;
   }
-  function rigReleaseKey(key) {
-    var i = rig.held.indexOf(key);
-    if (i >= 0) rig.held.splice(i, 1);
-    rigRefresh();
-    if (rig.held.length) rigVoiceStart(rigPitchFrom(rigActiveKey()));
-  }
-  /* 鼠标修饰键容错：鼠标输入结束后延迟 90ms 再应用，快速切换时只取最终稳定状态，防止连续串音 */
-  var rigModTimer = null;
-  var rigPending = { shift: 0, sharp: false };
-  var RIG_MOD_DELAY = 90;
-  function rigScheduleMods() {
-    clearTimeout(rigModTimer);
-    rigModTimer = setTimeout(function () {
-      rig.shift = rigPending.shift;
-      rig.sharp = rigPending.sharp;
-      rigRefresh();
-      if (rig.held.length) {
-        stopScore();
-        rigVoiceStart(rigPitchFrom(rigActiveKey()));
-      }
-    }, RIG_MOD_DELAY);
-  }
-  function rigUpdateMods() {
-    /* 立即刷新 UI 显示，但发声走容错延迟 */
-    rig.shift = rigPending.shift;
-    rig.sharp = rigPending.sharp;
-    rigRefresh();
-    rigScheduleMods();
-  }
-  function rigReleaseAll() {
-    rig.held = [];
-    rig.shift = 0;
-    rig.sharp = false;
-    rigPending.shift = 0;
-    rigPending.sharp = false;
-    clearTimeout(rigModTimer);
-    stopScore();
-    rigRefresh();
-  }
-  function rigBtnState(button) {
-    return button === 1 ? "middle" : button === 2 ? "right" : button === 0 ? "left" : null;
-  }
-  function rigBuildKeys() {
-    var box = $("#rigKeys");
-    box.innerHTML = "";
-    var names = { z: "do", x: "re", c: "mi", v: "fa", b: "sol", n: "la", m: "si", ",": "高do" };
-    KEY_LIST.concat([TOP_KEY]).forEach(function (k) {
-      var d = document.createElement("div");
-      d.className = "gkey";
-      d.dataset.key = k;
-      var k2 = k === "," ? "，" : k.toUpperCase();
-      d.innerHTML = "<kbd>" + k2 + "</kbd><span class='nm'>" + names[k] + "</span>";
-      d.addEventListener("pointerdown", function (ev) { ev.preventDefault(); rigPressKey(k); });
-      d.addEventListener("pointerup", function () { rigReleaseKey(k); });
-      d.addEventListener("pointerleave", function () { rigReleaseKey(k); });
-      box.appendChild(d);
-    });
-  }
-  function rigRebuildStrip() {
-    var strip = $("#rigPiano");
-    strip.innerHTML = "";
-    var minP = (rig.baseOct + 1 - 1) * 12;       // 低音do
-    var maxP = (rig.baseOct + 1 + 2) * 12 + 1;   // 高高音#do
-    for (var p = minP; p <= maxP; p++) {
-      var el = document.createElement("div");
-      el.className = "pk" + (NAME12[mod12(p)].indexOf("#") >= 0 ? " sharps" : "");
-      var reg = regOf(p, rig.baseOct);
-      if (reg === "低") el.classList.add("reg-low");
-      else if (reg === "高") el.classList.add("reg-high");
-      else if (reg === "高高") el.classList.add("reg-top");
-      el.dataset.p = p;
-      el.textContent = pitchName(p);
-      el.title = reg + degName(p) + " (" + pitchName(p) + ")";
-      strip.appendChild(el);
+  if (event.event === "done") {
+    // 后端回传的真实 token 用量挂到这条回答上（「上下文进度」就是读它）
+    if (event.usage && (event.usage.total_tokens || event.usage.prompt_tokens)) stream.message.usage = event.usage;
+    if (event.usage && event.usage.total_tokens) stream.usage = event.usage;
+    stream.effort = event.effort || null;
+    if (isCurrent()) {
+      if (event.session_id) state.sessionId = event.session_id;
+      state.lastUsage = stream.usage || state.lastUsage;
+      state.lastEffort = stream.effort;
     }
+    return;
   }
-  function rigInit() {
-    var sel = $("#rigBaseSel");
-    for (var o = 3; o <= 7; o++) {
-      var op = document.createElement("option");
-      op.value = o; op.textContent = "C" + o;
-      if (o === rig.baseOct) op.selected = true;
-      sel.appendChild(op);
-    }
-    sel.addEventListener("change", function (e) {
-      rig.baseOct = parseInt(e.target.value, 10);
-      rigReleaseAll();
-      rigRebuildStrip();
-      rigRefresh();
-    });
-    $("#rigClear").addEventListener("click", rigReleaseAll);
+  if (event.event === "error") throw new Error(event.error || "模型请求失败");
+}
 
-    /* 键盘：z x c v b n m , 实时按键（焦点在输入框时忽略） */
-    document.addEventListener("keydown", function (e) {
-      var t = e.target;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      var k = (e.key || "").toLowerCase();
-      if (k === "，" || k === ",") k = ",";
-      if (KEY_LIST.indexOf(k) >= 0 || k === TOP_KEY) {
-        e.preventDefault();
-        if (!e.repeat) rigPressKey(k);
-      }
-    });
-    document.addEventListener("keyup", function (e) {
-      var t = e.target;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      var k = (e.key || "").toLowerCase();
-      if (k === "，" || k === ",") k = ",";
-      if (KEY_LIST.indexOf(k) >= 0 || k === TOP_KEY) { e.preventDefault(); rigReleaseKey(k); }
-    });
-    window.addEventListener("blur", rigReleaseAll);
-
-    /* 鼠标修饰：仅测试台卡片区域内生效（左=低八度 / 右=高八度 / 中=升半音），输入结束后延迟容错 */
-    var card = $("#hkRig");
-    card.addEventListener("mousedown", function (e) {
-      var b = rigBtnState(e.button);
-      if (b === "left") rigPending.shift = -1;
-      else if (b === "right") { rigPending.shift = 1; e.preventDefault(); }
-      else if (b === "middle") { rigPending.sharp = true; e.preventDefault(); }
-      else return;
-      ensureAudio();
-      rigUpdateMods();
-    });
-    card.addEventListener("mouseup", function (e) {
-      var b = rigBtnState(e.button);
-      if (b === "left") rigPending.shift = 0;
-      else if (b === "right") { if (rigPending.shift === 1) rigPending.shift = 0; e.preventDefault(); }
-      else if (b === "middle") { rigPending.sharp = false; e.preventDefault(); }
-      else return;
-      rigUpdateMods();
-    });
-    card.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-
-    rigBuildKeys();
-    rigRebuildStrip();
-    rigRefresh();
-  }
-
-  /* ── 事件绑定 ── */
-  function bindEvents() {
-    var drop = $("#hkDrop"), input = $("#hkFile");
-    drop.addEventListener("click", function () { input.click(); });
-    drop.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); }
-    });
-    ["dragenter", "dragover"].forEach(function (ev) {
-      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add("hk-dragover"); });
-    });
-    ["dragleave", "drop"].forEach(function (ev) {
-      drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove("hk-dragover"); });
-    });
-    drop.addEventListener("drop", function (e) { setFile(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]); });
-    input.addEventListener("change", function () { setFile(input.files && input.files[0]); });
-    $("#hkRechoose").addEventListener("click", function () {
-      $("#hkFilebar").hidden = true;
-      $("#hkDrop").hidden = false;
-      $("#hkParse").disabled = true;
-      $("#hkCtaSub").textContent = "请先拖入一个音频文件";
-    });
-
-    $("#hkParse").addEventListener("click", startParse);
-    $("#hkExport").addEventListener("click", exportScore);
-
-    /* 基准八度面板：自动 / C3~C7 */
-    $$(".hk-octbtn").forEach(function (b) {
-      b.addEventListener("click", function () {
-        stopScore();
-        state.baseOct = b.dataset.oct === "auto" ? "auto" : Number(b.dataset.oct);
-        renderScore();
-      });
-    });
-
-    /* 音符卡片点击试音 */
-    $("#hkScore").addEventListener("click", function (e) {
-      var note = e.target.closest ? e.target.closest(".hk-note") : null;
-      if (!note || !note.dataset.pitch || Number(note.dataset.pitch) === 0) return;
-      playHarmonicaNote(Number(note.dataset.pitch), 0.5);
-    });
-    $("#hkScore").addEventListener("contextmenu", function (e) { e.preventDefault(); });
-
-    $("#hkPlay").addEventListener("click", playScore);
-    $("#hkStop").addEventListener("click", stopScore);
-
-    /* 音色目录：应用并记住 */
-    var dirInput = $("#hkSoundDir");
-    try {
-      if (localStorage.getItem("hkSoundDir")) dirInput.value = localStorage.getItem("hkSoundDir");
-    } catch (e) { }
-    $("#hkSoundApply").addEventListener("click", function () {
-      var dir = (dirInput.value || SOUND_BASE).trim() || SOUND_BASE;
-      try { localStorage.setItem("hkSoundDir", dir); } catch (e) { }
-      loadHarmonicaSounds(dir);
-    });
-  }
-
-  /* ════════ 乐谱视窗（拖入 txt → 按键顺序 → 自动演奏） ════════ */
-  var swin = {
-    notes: [],       // [{name, midi, gap, key, slot, sharp, inRange, base, jp, dur}]
-    base: "auto",
-    playing: false,
-    timer: null,
-    idx: 0,
-    lastAppendStart: 0,  /* 上次打拍追加的起始索引：非续写模式只替换从这里到末尾的一段 */
-  };
-
-  /* ── 三角洲小节谱 txt 解析（《前前前世》格式）→ 三元组 notes ──
-     格式：
-       前前前世 — 三角洲口琴谱
-       BPM 190 · 503 音符 · 118 小节 · 移调 -6
-       小节   1 (4/4)
-         简谱  1 4  5
-         键位  Z V  B
-         节奏  4 4· 8
-     节奏记号：数字=几分音符时值（1全/2二分/4四分/8八分/16十六分），·=附点×1.5；
-               b 后缀（如 3.5b）表示拍数（该音延长）；— 空小节休止 */
-  /* 三角洲节奏记号 → 拍数（以四分音符为 1 拍） */
-  function deltaBeats(tok) {
-    tok = String(tok).trim();
-    if (!tok || tok === "—" || tok === "－" || tok === "-") return 1;
-    /* Nb：数字直接为拍数，可跨小节延长（如 3.5b / 6b） */
-    var bm = tok.match(/^([0-9]+(?:\.[0-9]+)?)\s*b$/i);
-    if (bm) return parseFloat(bm[1]);
-    var dotted = tok.indexOf("·") >= 0;
-    var base = tok.replace(/·/g, "").trim();
-    var map = { "1": 4, "2": 2, "4": 1, "8": 0.5, "16": 0.25, "32": 0.125 };
-    var beats = Object.prototype.hasOwnProperty.call(map, base) ? map[base] : parseFloat(base);
-    if (isNaN(beats) || beats <= 0) beats = 1;
-    if (dotted) beats *= 1.5;       /* 附点 ×1.5 */
-    return beats;
-  }
-
-  /* 三角洲小节谱 → 音符序列
-     采用绝对时间轴：每个小节按小节号对齐理论边界，空小节整段休止，
-     b 长音可跨小节延续；gap = 下一音起点 − 本音起点，因此长停顿/空小节
-     造成的长间隔会自然落到前一音的 gap 上，不会丢失。 */
-  function parseDeltaTxt(text) {
-    var bpm = 190;
-    var bpmM = String(text).match(/BPM\s*[:：]?\s*(\d+)/i);
-    if (bpmM) bpm = parseInt(bpmM[1], 10);
-    var beatMs = 60000 / Math.max(30, bpm);
-    var lines = String(text).split(/\r?\n/);
-    var measures = [], cur = null;
-    lines.forEach(function (line) {
-      var hm = line.match(/^\s*小节\s*(\d+)\s*(?:\(\s*(\d+)\s*\/\s*(\d+)\s*\))?([\s\S]*)$/);
-      if (hm) {
-        if (cur) measures.push(cur);
-        var barBeats = hm[2] && hm[3] ? (4 * parseInt(hm[2], 10) / parseInt(hm[3], 10)) : 4;
-        cur = { no: +hm[1], barBeats: barBeats, empty: /—|－|--/.test(hm[4] || ""), jp: null, rh: null };
+/* 前台流的打字机：一个字一个字推；若中途被切走，剩下的整段一次性攒进消息（不丢内容） */
+async function typeAnswer(stream, text, fast) {
+  // fast = 后端一次性给的整段回答（空间工具链路）：按小块快速推，别让长文卡半天
+  const step = fast && text.length > 24 ? Math.max(6, Math.ceil(text.length / 400)) : 0;
+  if (step) {
+    for (let index = 0; index < text.length; index += step) {
+      if (stream.cancelled) return;
+      if (stream.sessionId !== state.sessionId) {
+        stream.answer += text.slice(index);
+        stream.message.content = stream.answer;
         return;
       }
-      if (!cur) return;
-      var mj = line.match(/^\s*简谱[\s:：]+([\s\S]*)$/);
-      var mr = line.match(/^\s*键位[\s:：]+([\s\S]*)$/);
-      var mrh = line.match(/^\s*节奏[\s:：]+([\s\S]*)$/);
-      if (mj) cur.jp = mj[1].trim().split(/\s+/).filter(Boolean);
-      else if (mr) cur.keyLine = mr[1].trim().split(/\s+/).filter(Boolean);
-      else if (mrh) cur.rh = mrh[1].trim().split(/\s+/).filter(Boolean);
-    });
-    if (cur) measures.push(cur);
-
-    var raw = [], cursor = 0;
-    /* 键位 token（Z/V/B/N#/M-/,+ 等）→ 简谱记法（1..7/i/#/【】/{}） */
-    function keyTokenToName(tok0) {
-      var tok = String(tok0).trim();
-      var slotPre = "";
-      if (tok.charAt(0) === "+") { slotPre = "high"; tok = tok.slice(1); }
-      else if (tok.charAt(0) === "-") { slotPre = "low"; tok = tok.slice(1); }
-      else if (tok.charAt(tok.length - 1) === "+") { slotPre = "high"; tok = tok.slice(0, -1); }
-      else if (tok.charAt(tok.length - 1) === "-") { slotPre = "low"; tok = tok.slice(0, -1); }
-      var sharp = /#/.test(tok);
-      var letter = tok.replace(/[#']/g, "").toLowerCase();
-      var deg = letter === "," || letter === "'" ? "i" : KEY_JP[letter];
-      if (!deg) return null;
-      var core = (sharp ? "#" : "") + deg;
-      if (slotPre === "high") return "{" + core + "}";
-      if (slotPre === "low") return "【" + core + "】";
-      return core;
+      stream.answer += text.slice(index, index + step);
+      stream.message.content = stream.answer;
+      renderStreamingAnswer(stream);
+      await new Promise((resolve) => setTimeout(resolve, 12));
     }
-    measures.forEach(function (mm) {
-      var barBeats = mm.barBeats || 4;
-      var mStart = (mm.no - 1) * barBeats;
-      if (mm.empty) { cursor = mStart + barBeats; return; }
-      if (!mm.rh) return;
-      /* 优先使用「键位」行（最精确），否则用「简谱」行 */
-      var names = null;
-      if (mm.keyLine && mm.keyLine.length >= mm.rh.length) {
-        names = mm.keyLine.map(keyTokenToName);
-      } else if (mm.jp) {
-        names = mm.jp.map(function (jtok) {
-          var m = String(jtok).match(/^(#?)([1-7])([.']?)$/);
-          if (!m) return null;
-          var core = (m[1] ? "#" : "") + m[2];
-          if (m[3] === ".") return "【" + core + "】";
-          if (m[3] === "'") return m[2] === "1" ? "i" : "{" + core + "}";
-          return core;
-        });
-      }
-      if (!names) return;
-      var local = Math.max(cursor, mStart);
-      var n = Math.min(names.length, mm.rh.length);
-      for (var k = 0; k < n; k++) {
-        var name = names[k];
-        if (!name) { local += deltaBeats(mm.rh[k]); continue; }
-        var b = deltaBeats(mm.rh[k]);
-        raw.push({ name: name, start: local, durBeats: b });
-        local += b;
-      }
-      cursor = local;
-    });
-
-    var notes = [];
-    for (var i = 0; i < raw.length; i++) {
-      var r = raw[i];
-      var dur = Math.max(30, Math.round(r.durBeats * beatMs));
-      var gapBeats = (i + 1 < raw.length) ? (raw[i + 1].start - r.start) : r.durBeats;
-      if (!(gapBeats > 0)) gapBeats = r.durBeats;
-      var gap = Math.max(30, Math.round(gapBeats * beatMs));
-      notes.push({ name: r.name, midi: null, jp: parseJianpuToken(r.name), dur: dur, gap: gap });
-    }
-    return notes;
+    return;
   }
-  /* 判断文本是否为三角洲小节谱格式 */
-  function isDeltaTxt(text) {
-    return /^\s*小节\s*\d+/m.test(text) && /简谱/.test(text) && /节奏/.test(text);
-  }
-
-  function parseNoteTxt(text) {
-    if (!text) return [];
-    var raw = String(text)
-      .replace(/[\u201c\u201d\u2018\u2019]/g, '"')
-      .replace(/[，；]/g, ",");
-    /* 提取所有 ( ... ) 块内的 token */
-    var blocks = raw.match(/\(([^)]*)\)/g) || [];
-    var tokens = [];
-    blocks.forEach(function (b) {
-      var inner = b.slice(1, -1);
-      var parts = inner.split(",").map(function (s) {
-        return s.trim().replace(/^["']|["']$/g, "");
-      }).filter(Boolean);
-      tokens = tokens.concat(parts);
-    });
-    /* 没有括号时按逗号/空白直接切分（兼容） */
-    if (!tokens.length) {
-      tokens = raw.split(/[\s,]+/).map(function (s) { return s.trim(); }).filter(Boolean);
-    }
-    function parseMs(s) {
-      var v = parseInt(String(s).replace(/[^0-9]/g, ""), 10);
-      return (isNaN(v) || v < 10) ? 200 : v;
-    }
-    var notes = [];
-    /* 三元组：音阶, 持续ms, 间隔ms；兼容旧二元组：音阶, 间隔ms（持续=间隔*0.8） */
-    var i = 0;
-    while (i < tokens.length) {
-      var pitchTok = tokens[i];
-      var dur = 200, gap = 200;
-      if (i + 2 < tokens.length && /ms$/i.test(tokens[i + 2])) {
-        /* 三元组 */
-        dur = parseMs(tokens[i + 1]);
-        gap = parseMs(tokens[i + 2]);
-        i += 3;
-      } else if (i + 1 < tokens.length) {
-        /* 旧二元组 */
-        gap = parseMs(tokens[i + 1]);
-        dur = Math.max(50, Math.round(gap * 0.8));
-        i += 2;
-      } else {
-        i += 1;
-      }
-      var jp = parseJianpuToken(pitchTok);
-      var midi = null, name = pitchTok;
-      if (jp) {
-        name = jianpuOf(jp.key, jp.slot, jp.sharp);
-      } else {
-        midi = parsePitchName(pitchTok);
-        if (midi === null) continue;
-        name = pitchName(midi);
-      }
-      notes.push({ name: name, midi: midi, jp: jp, dur: dur, gap: gap });
-    }
-    return notes;
-  }
-
-  function swinResolve() {
-    var namedMidis = swin.notes.filter(function (n) { return n.midi !== null; }).map(function (n) { return n.midi; });
-    var base = swin.base === "auto"
-      ? (namedMidis.length ? autoBaseOctave(namedMidis) : 5)
-      : parseInt(swin.base, 10);
-    swin.notes.forEach(function (n) {
-      if (n.jp) {
-        n.midi = jianpuToMidi(n.jp.key, n.jp.slot, n.jp.sharp, base);
-        n.key = n.jp.key; n.slot = n.jp.slot; n.sharp = n.jp.sharp; n.inRange = true;
-      } else {
-        var m = mapNote(n.midi, base);
-        n.key = m.key; n.slot = m.slot; n.sharp = m.sharp; n.inRange = m.inRange;
-      }
-      n.base = base;
-    });
-  }
-
-  function renderSwinKeys() {
-    var box = $("#swinKeys");
-    box.innerHTML = "";
-    if (!swin.notes.length) {
-      box.innerHTML = '<div class="hk-swin-empty">拖入或粘贴 txt 后自动解析为按键顺序…</div>';
-      $("#swinPlay").disabled = true; $("#swinStop").disabled = true;
-      $("#swinMeta").textContent = ""; $("#swinStatus").textContent = "等待曲谱…";
+  for (let index = 0; index < text.length; index += 1) {
+    if (stream.cancelled) return;
+    if (stream.sessionId !== state.sessionId) {
+      stream.answer += text.slice(index);
+      stream.message.content = stream.answer;
       return;
     }
-    var frag = document.createDocumentFragment();
-    swin.notes.forEach(function (n, i) {
-      var el = document.createElement("div");
-      el.className = "hk-swin-key" + (n.inRange ? "" : " hk-swin-skip");
-      el.dataset.idx = i;
-      var k = document.createElement("span");
-      k.className = "hk-swin-kchar";
-      k.textContent = n.inRange ? (n.key === "," ? "，" : n.key.toUpperCase()) : "—";
-      var mod = document.createElement("span");
-      mod.className = "hk-swin-kmod " + (n.inRange ? modInfo(n.slot, n.sharp).cls : "hk-mod-skip");
-      mod.textContent = n.inRange ? modInfo(n.slot, n.sharp).label : "跳过";
-      var nm = document.createElement("span");
-      nm.className = "hk-swin-knm";
-      nm.textContent = n.name + (n.inRange ? " · " + pitchName(n.midi) : "");
-      var gp = document.createElement("span");
-      gp.className = "hk-swin-kgap";
-      gp.textContent = "⏱ " + n.dur + " / ↳ " + n.gap + "ms";
-      gp.title = "持续 " + n.dur + "ms · 到下一音间隔 " + n.gap + "ms";
-      el.appendChild(k); el.appendChild(mod); el.appendChild(nm); el.appendChild(gp);
-      frag.appendChild(el);
-    });
-    box.appendChild(frag);
-    var playable = swin.notes.filter(function (n) { return n.inRange; }).length;
-    $("#swinMeta").textContent = "共 " + swin.notes.length + " 音 · 可演奏 " + playable +
-      (swin.notes[0] ? " · 基准 C" + swin.notes[0].base : "");
-    $("#swinPlay").disabled = playable === 0;
-    $("#swinStatus").textContent = playable ? "已解析，可自动演奏" : "无可演奏音";
+    const character = text[index];
+    stream.answer += character;
+    stream.message.content = stream.answer;
+    renderStreamingAnswer(stream);
+    await new Promise((resolve) => setTimeout(resolve, character.trim() ? 17 : 4));
   }
+}
 
-  function swinParse() {
-    var text = $("#swinTxt").value;
-    var fmt = getSelFormat();
-    if (fmt === "delta" || (fmt === "harmonica" && isDeltaTxt(text))) {
-      swin.notes = parseDeltaTxt(text);
-    } else {
-      swin.notes = parseNoteTxt(text);
+function renderStreamingAnswer(stream) {
+  if (stream.sessionId !== state.sessionId) return;   // 后台流不碰界面
+  const bubble = messagesEl.querySelector(".message.assistant:last-of-type .bubble");
+  if (bubble) {
+    // 返回的图片 / 文件要待在正文最下面，所以流式文字一律插在它们前面，打字不会插到卡片下面
+    const returns = bubble.querySelector(".bubble-returns");
+    let text = bubble.querySelector(".streaming-text");
+    if (!text) {
+      text = document.createElement("span");
+      text.className = "streaming-text";
+      if (returns) bubble.insertBefore(text, returns); else bubble.append(text);
     }
-    swinResolve();
-    swin.lastAppendStart = swin.notes.length;
-    renderSwinKeys();
+    text.textContent = displayAnswer(stream.answer);   // 打字期间同样不留首尾空行
+    if (!bubble.querySelector(".cursor-block")) {
+      const cursor = document.createElement("span");
+      cursor.className = "cursor-block";
+      if (returns) bubble.insertBefore(cursor, returns); else bubble.append(cursor);
+    }
   }
-  function getSelFormat() {
-    var el = document.querySelector('input[name="hkFormat"]:checked');
-    return el ? el.value : "harmonica";
-  }
+  scrollMessagesToBottom(false);   // 贴底才跟随；往上翻看历史时不再被强行拉回底部
+}
 
-  function loadSwinFile(f) {
-    var reader = new FileReader();
-    reader.onload = function () {
-      var txt = window.DFH && DFH.decodeText ? DFH.decodeText(reader.result) : reader.result;
-      $("#swinTxt").value = txt;
-      swinParse();
-      renderVisualList();
-      var converted = isDeltaTxt(txt) ? "（已翻译为音阶·持续·间隔）" : "";
-      hint("已载入 " + f.name + "（" + swin.notes.length + " 音）" + converted, 2400);
+/* 生成正常结束：落进消息 → 写回「它自己那条」会话存档 →（前台时）收尾界面 */
+async function finishChatStream(stream) {
+  if (stream.finished) return;
+  stream.finished = true;
+  if (stream.poller) clearTimeout(stream.poller);
+  const registered = activeChatStreams.get(stream.sessionId);
+  if (registered === stream) activeChatStreams.delete(stream.sessionId);
+  if (stream.cancelled) return;
+  const wasCurrent = stream.sessionId === state.sessionId;
+  stream.message.content = stream.answer;
+  delete stream.message.streaming;
+  if (!String(stream.answer || "").trim() && !(stream.message.files || []).length && !(stream.message.images || []).length) {
+    // 服务端重启 / 记录过期：这段回答没能补回来，撤掉占位气泡，不留空壳
+    const index = stream.messages.indexOf(stream.message);
+    if (index >= 0) stream.messages.splice(index, 1);
+    if (wasCurrent) {
+      state.thinkingVisible = false;
+      state.thinkingDone = false;
+      saveState();
+      renderMessages();
+      syncComposer();
+      $("#typingState").textContent = "这段回答没能补回来，请重新发一次";
+    }
+    return;
+  }
+  try { await stream.persistPromise; } catch (error) { console.warn("等待存档失败", error); }
+  await persistConversation(stream);   // 后台流也会自己落档，且不会污染当前界面
+  if (!wasCurrent) {
+    window.historyListPointer?.refresh?.();
+    return;
+  }
+  state.thinking.push("回答生成完成，已存进当前对话");
+  if (stream.usage) {
+    const think = stream.usage.reasoning_tokens ? `思考过程 ${stream.usage.reasoning_tokens} tokens` : "未开启思考链";
+    state.thinking.push(`本次消耗 ${stream.usage.total_tokens} tokens（${think}）`);
+  }
+  state.thinkingVisible = true;
+  state.thinkingDone = true;
+  saveState();
+  renderMessages();
+  syncComposer();
+  renderMindUsage();
+  $("#typingState").textContent = "已保存";
+}
+
+/* 请求失败 / 被掐断：撤掉这段会话里的占位气泡；只有前台才动界面和状态栏 */
+function failChatStream(stream, error) {
+  if (stream.finished) return;
+  stream.finished = true;
+  if (stream.poller) clearTimeout(stream.poller);
+  const registered = activeChatStreams.get(stream.sessionId);
+  if (registered === stream) activeChatStreams.delete(stream.sessionId);
+  const index = stream.messages.indexOf(stream.message);
+  if (index >= 0) stream.messages.splice(index, 1);
+  if (stream.cancelled) return;   // 删掉会话导致的取消：静默收场
+  if (stream.sessionId !== state.sessionId) return;   // 后台流失败：不打扰当前界面
+  state.thinkingVisible = false;
+  state.thinkingDone = false;
+  state.requestError = error.message;
+  saveState();
+  renderMessages();
+  syncComposer();   // 前台流已从注册表移除 → 输入框恢复可用
+  $("#typingState").textContent = `请求失败：${error.message}`;
+}
+
+/* 掐掉某段会话还在生成的流（删会话 / 清空上下文时用）：中止请求，且不再回写存档 */
+function cancelChatStream(sessionId) {
+  const stream = activeChatStreams.get(sessionId);
+  if (!stream) return;
+  stream.cancelled = true;
+  activeChatStreams.delete(sessionId);
+  try { stream.controller.abort(); } catch (error) { console.warn("中止生成失败", error); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   离开页面期间被「吞掉」的回答：回来时和服务端对一次账
+   ──────────────────────────────────────────────────────────────
+   切页 / 刷新会让浏览器掐断 fetch，但服务端会把回答继续生成完
+   （web_app.py 的 STREAM_RECORDS）。回到页面后：
+     · 服务端还在生成 → 挂一个「重连流」，跟着轮询直到完成；
+     · 服务端已经生成完、本地却没有 → 直接把这条回答补进当前会话并存档。
+   ══════════════════════════════════════════════════════════════ */
+const STREAM_POLL_MS = 2500;
+
+async function syncSessionFromServer() {
+  const requestedSession = state.sessionId;
+  if (activeChatStreams.has(requestedSession)) return;   // 页内已经有活着的流，不用对账
+  let data;
+  try {
+    const response = await fetch("/api/session/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: requestedSession }),
+    });
+    data = await response.json();
+  } catch (error) {
+    console.warn("会话状态同步失败", error);
+    return;
+  }
+  if (state.sessionId !== requestedSession) return;   // 对账期间用户又切走了，丢弃
+  const streaming = data.streaming;
+  if (streaming) {
+    const lastLocal = state.messages[state.messages.length - 1];
+    const alreadyShown = !streaming.running
+      && lastLocal && lastLocal.role === "assistant"
+      && String(lastLocal.content || "") === String(streaming.answer || "");
+    if (!alreadyShown) reattachServerStream(requestedSession, streaming);
+    return;
+  }
+  const serverMessages = Array.isArray(data.messages) ? data.messages : [];
+  const lastServer = serverMessages[serverMessages.length - 1];
+  const lastLocal = state.messages[state.messages.length - 1];
+  if (lastServer && lastServer.role === "assistant" && String(lastServer.content || "").trim()
+      && (!lastLocal || lastLocal.role === "user")) {
+    state.messages.push({
+      role: "assistant",
+      content: String(lastServer.content),
+      model: data.model_id || state.model,
+      modelLabel: data.model_label || modelLabel(state.model),
+    });
+    saveState();
+    renderMessages({ bottom: true });
+    persistCurrentConversation();
+    $("#typingState").textContent = "已把离开期间生成完的回答补回来";
+  }
+}
+
+/* 服务端还在生成：挂一个流上下文，每 2.5 秒问一次进度（用的还是同一套 message 对象） */
+function reattachServerStream(sessionId, streaming) {
+  let message = state.messages[state.messages.length - 1];
+  if (!message || message.role !== "assistant" || !message.streaming) {
+    message = {
+      role: "assistant",
+      content: "",
+      streaming: true,
+      model: state.model,
+      modelLabel: streaming.model_label || modelLabel(state.model),
+      effort: state.effortLevel,
+      reconnected: true,
     };
-    reader.readAsArrayBuffer(f);
+    state.messages.push(message);
   }
-
-  /* ── 自动演奏：驱动测试台虚拟键 / 钢琴条 / 悬浮窗 / 发声 ── */
-  function autoRigShow(n) {
-    $$("#rigKeys .gkey").forEach(function (el) {
-      el.classList.toggle("down", el.dataset.key === n.key);
-    });
-    rigPianoHighlight(n.midi);
-    var reg = regOf(n.midi, n.base || rig.baseOct);
-    $("#rigNowName").textContent = reg + degName(n.midi) + "  " + pitchName(n.midi);
-    var mods = [];
-    if (n.slot === -1) mods.push("按住左键");
-    else if (n.slot === 1) mods.push("按住右键");
-    if (n.sharp) mods.push("中键(升半音)");
-    mods.push(n.key === "," ? "键[，]" : "键[" + n.key.toUpperCase() + "]");
-    $("#rigNowCombo").textContent = "按下 " + mods.join(" + ") + " = " + pitchName(n.midi);
-    fscoreSet(n, swin.idx, swin.notes.length);
-  }
-  function autoRigClear() {
-    $$("#rigKeys .gkey").forEach(function (el) { el.classList.remove("down"); });
-    rigPianoHighlight(null);
-    $("#rigNowName").textContent = "—";
-    $("#rigNowCombo").textContent = "等待按键…";
-  }
-
-  function swinPlay() {
-    if (!swin.notes.length || !swin.notes.some(function (n) { return n.inRange; })) return;
-    swinStop(false);
-    swin.playing = true;
-    swin.idx = 0;
-    $("#swinPlay").disabled = true;
-    $("#swinStop").disabled = false;
-    $("#swinStatus").textContent = "自动演奏中…";
-    swinTick();
-  }
-  function swinTick() {
-    if (!swin.playing) return;
-    while (swin.idx < swin.notes.length && !swin.notes[swin.idx].inRange) swin.idx++;
-    if (swin.idx >= swin.notes.length) { swinStop(true); return; }
-    var n = swin.notes[swin.idx];
-    autoRigShow(n);
-    $$("#swinKeys .hk-swin-key").forEach(function (el, i) {
-      el.classList.toggle("active", i === swin.idx);
-    });
-    if (!$("#rigMute").checked) {
-      playHarmonicaNote(n.midi, Math.max(0.08, n.dur / 1000));
-    }
-    var gap = n.gap;
-    swin.idx++;
-    swin.timer = setTimeout(swinTick, gap);
-  }
-  function swinStop(finished) {
-    if (swin.timer) { clearTimeout(swin.timer); swin.timer = null; }
-    swin.playing = false;
-    autoRigClear();
-    $$("#swinKeys .hk-swin-key").forEach(function (el) { el.classList.remove("active"); });
-    var hasPlayable = swin.notes.some(function (n) { return n.inRange; });
-    $("#swinPlay").disabled = !hasPlayable;
-    $("#swinStop").disabled = true;
-    $("#swinStatus").textContent = finished ? "演奏完成" : "已停止";
-    fscoreSet(null);
-  }
-
-  /* ── 连续输入音阶自动拆分：12345{i} → ["1","2","3","4","5","{1}","i"]；支持逗号分隔、【】{}、# ── */
-  function expandBracket(open, inner) {
-    /* 括号内多数字拆分：【12#3】→ ["【1】","【2】","【#3】"]；# 匹配在后面的数字上 */
-    var close = open === "【" ? "】" : "}";
-    var out = [];
-    var j = 0;
-    while (j < inner.length) {
-      var c = inner[j];
-      if (c === "#" && j + 1 < inner.length && /[1-7i]/.test(inner[j + 1])) {
-        out.push(open + "#" + inner[j + 1] + close);
-        j += 2;
-      } else if (/[1-7i]/.test(c)) {
-        out.push(open + c + close);
-        j += 1;
-      } else {
-        j += 1;
-      }
-    }
-    return out;
-  }
-  function splitPitches(input) {
-    var s = String(input || "").trim();
-    if (!s) return [];
-    /* 有逗号/中文逗号时按分隔符拆 */
-    if (/[,，]/.test(s)) {
-      return s.split(/[,，]/).map(function (x) { return x.trim(); }).filter(Boolean);
-    }
-    /* 无逗号：逐字符扫描，识别 【】{} 包裹、# 前缀；括号内多数字自动拆分 */
-    var result = [];
-    var i = 0;
-    while (i < s.length) {
-      var ch = s[i];
-      /* 【...】 / {...} 包裹：内部多数字拆成每个都带括号 */
-      if (ch === "【" || ch === "{") {
-        var close = ch === "【" ? "】" : "}";
-        var end = s.indexOf(close, i + 1);
-        if (end > 0) {
-          result = result.concat(expandBracket(ch, s.slice(i + 1, end)));
-          i = end + 1;
-          continue;
-        }
-      }
-      /* # 前缀：#1 / #i / #【12】 / #{45}（#应用到括号内每个数字） */
-      if (ch === "#" && i + 1 < s.length) {
-        var next = s[i + 1];
-        if (next === "【" || next === "{") {
-          var close2 = next === "【" ? "】" : "}";
-          var e3 = s.indexOf(close2, i + 2);
-          if (e3 > 0) {
-            var expanded = expandBracket(next, s.slice(i + 2, e3));
-            /* # 在括号外 → 移到括号内每个数字前：#【1】→【#1】 */
-            expanded = expanded.map(function (t) { return t.charAt(0) + "#" + t.slice(1); });
-            result = result.concat(expanded);
-            i = e3 + 1;
-            continue;
-          }
-        }
-        if (/[1-7i]/.test(next)) { result.push("#" + next); i += 2; continue; }
-      }
-      /* 普通音阶字符 1-7, i */
-      if (/[1-7i]/.test(ch)) result.push(ch);
-      i++;
-    }
-    return result;
-  }
-
-  /* ── 音阶 token → 可显示/发声的 note 对象（打拍预览用，基准 C5） ── */
-  function pitchTokenToNote(token) {
-    var jp = parseJianpuToken(token);
-    if (jp) {
-      var midi = jianpuToMidi(jp.key, jp.slot, jp.sharp, 5);
-      return { key: jp.key, slot: jp.slot, sharp: jp.sharp, midi: midi, name: jianpuOf(jp.key, jp.slot, jp.sharp) };
-    }
-    var midi2 = parsePitchName(token);
-    if (midi2 === null) return null;
-    var m = mapNote(midi2, 5);
-    return { key: m.key, slot: m.slot, sharp: m.sharp, midi: m.pitch, name: token };
-  }
-
-  /* ── 打拍录制节奏 ── */
-  var tapRec = {
-    active: false,
-    timestamps: [],
-    pitches: [],
-    defaultDur: 200,
+  const stream = {
+    sessionId,
+    historyId: state.historyId,
+    messages: state.messages,
+    summary: state.summary,
+    message,
+    thinking: state.thinking,
+    answer: String(streaming.answer || ""),
+    usage: null,
+    effort: null,
+    cancelled: false,
+    finished: false,
+    reconnected: true,
+    controller: new AbortController(),   // 本地没有 fetch 可掐，占位而已
   };
-  function tapSpaceHandler(e) {
-    if (e.code === "Space" && tapRec.active) {
-      e.preventDefault();
-      recordTap();
-    }
-  }
-  function tapShowAndSound(idx) {
-    /* 打拍时显示当前音 + 发声 */
-    var total = tapRec.pitches.length;
-    if (!total) return;
-    var token = tapRec.pitches[Math.min(idx, total - 1)];
-    var note = pitchTokenToNote(token);
-    if (!note) return;
-    fscoreSet(note);
-    if (!$("#rigMute").checked) {
-      playHarmonicaNote(note.midi, Math.max(0.12, tapRec.defaultDur / 1000));
-    }
-  }
-  function recordTap() {
-    tapRec.timestamps.push(performance.now());
-    var n = tapRec.timestamps.length;
-    var total = tapRec.pitches.length;
-    var btn = $("#swinTapBtn");
-    btn.textContent = "停止并生成（" + n + "/" + total + " 拍）";
-    $("#swinTapStatus").textContent = "已打 " + n + " 拍 / 共 " + total + " 音" + (n >= total ? " ✓ 可停止生成" : "，继续打拍…");
-    /* 打拍按钮视觉反馈 */
-    var pad = $("#swinTapPad");
-    pad.classList.add("tap-flash");
-    setTimeout(function () { pad.classList.remove("tap-flash"); }, 120);
-    /* 显示当前音 + 发声（第 n 拍对应第 n-1 个音） */
-    tapShowAndSound(n - 1);
-  }
-  function startTapRecord() {
-    var pitchInput = $("#swinTapPitches").value;
-    tapRec.pitches = splitPitches(pitchInput);
-    if (!tapRec.pitches.length) { hint("请先输入音阶序列（如 12345{i}）", 2600); return; }
-    tapRec.defaultDur = parseInt($("#swinTapDur").value, 10) || 200;
-    tapRec.timestamps = [performance.now()];
-    tapRec.active = true;
-    $("#swinTapBtn").textContent = "停止并生成（1/" + tapRec.pitches.length + " 拍）";
-    $("#swinTapStatus").textContent = "录制中… 连续点击「打拍」或按空格键，第 1 拍已记录";
-    document.addEventListener("keydown", tapSpaceHandler);
-    /* 第一拍也显示/发声第一个音 */
-    tapShowAndSound(0);
-    hint("打拍录制开始：共 " + tapRec.pitches.length + " 音，连续打拍记录间隔", 2400);
-  }
-  function stopTapRecord() {
-    if (!tapRec.active) return;
-    tapRec.active = false;
-    document.removeEventListener("keydown", tapSpaceHandler);
-    var pitches = tapRec.pitches;
-    var ts = tapRec.timestamps;
-    if (ts.length < 2) {
-      hint("至少打 2 拍才能记录间隔", 2500);
-      $("#swinTapBtn").textContent = "开始打拍录制";
-      $("#swinTapStatus").textContent = "输入音阶 → 点开始 → 连续打拍";
+  message.content = stream.answer;
+  activeChatStreams.set(sessionId, stream);
+  state.thinkingVisible = true;
+  state.thinkingDone = false;
+  renderMessages({ bottom: true });
+  syncComposer();
+  $("#typingState").textContent = "思考中...";
+  if (streaming.running) pollServerStream(stream);
+  else finishChatStream(stream);
+}
+
+function pollServerStream(stream, delay) {
+  stream.pollCount = (stream.pollCount || 0) + 1;
+  stream.poller = setTimeout(async () => {
+    if (stream.cancelled) return;
+    if (stream.pollCount > 120) {   // 最多跟 5 分钟，别无限轮询
+      await finishChatStream(stream);
       return;
     }
-    /* 生成音符：间隔 = 相邻打拍时间差；超出拍数用最后间隔补全 */
-    var lastGap = Math.round(ts[ts.length - 1] - ts[ts.length - 2]);
-    var syncDur = $("#swinTapSync") ? $("#swinTapSync").checked : false;
-    var newNotes = [];
-    for (var i = 0; i < pitches.length; i++) {
-      var gap;
-      if (i < ts.length - 1) {
-        gap = Math.max(30, Math.round(ts[i + 1] - ts[i]));
-      } else {
-        gap = Math.max(30, lastGap);
-      }
-      var jp = parseJianpuToken(pitches[i]);
-      newNotes.push({
-        name: jp ? jianpuOf(jp.key, jp.slot, jp.sharp) : pitches[i],
-        midi: jp ? null : parsePitchName(pitches[i]),
-        jp: jp,
-        dur: syncDur ? gap : tapRec.defaultDur,  /* 同步延迟：持续=间隔 */
-        gap: gap
-      });
-    }
-    /* 续写模式：追加到当前乐谱后面，并记录追加起始位置；
-       非续写模式：只替换最后添加的那一段（从 lastAppendStart 截断），保留之前的乐谱 */
-    var append = $("#swinTapAppend") ? $("#swinTapAppend").checked : true;
-    if (append) {
-      swin.lastAppendStart = swin.notes.length;
-      swin.notes = swin.notes.concat(newNotes);
-    } else {
-      swin.notes = swin.notes.slice(0, swin.lastAppendStart);
-      swin.notes = swin.notes.concat(newNotes);
-    }
-    swinResolve();
-    $("#swinTxt").value = notesToTxt(swin.notes);
-    renderSwinKeys();
-    renderVisualList();
-    $("#swinTapBtn").textContent = "开始打拍录制";
-    var mode = append ? "续写" : "重写末段";
-    $("#swinTapStatus").textContent = "已" + mode + " " + newNotes.length + " 音（打拍 " + ts.length + " 次，持续 " + tapRec.defaultDur + "ms），共 " + swin.notes.length + " 音";
-    fscoreSet(null);  /* 停止打拍时清空悬浮窗预览 */
-    hint("打拍录入完成：" + mode + " " + newNotes.length + " 个音符，当前共 " + swin.notes.length + " 音", 2800);
-  }
-
-  /* ── 乐谱保存 / 载入 / 清空（localStorage） ── */
-  var SAVED_KEY = "hk_saved_scores";
-  function getSavedScores() {
+    let data = null;
     try {
-      return JSON.parse(localStorage.getItem(SAVED_KEY) || "{}");
-    } catch (e) { return {}; }
-  }
-  function setSavedScores(obj) {
-    try { localStorage.setItem(SAVED_KEY, JSON.stringify(obj)); } catch (e) { }
-  }
-  function refreshSavedList() {
-    var sel = $("#swinSavedList");
-    var sel2 = $("#fscoreSavedList");
-    if (!sel && !sel2) return;
-    var saved = getSavedScores();
-    var names = Object.keys(saved).sort(function (a, b) {
-      return (saved[b].date || 0) - (saved[a].date || 0);
-    });
-    function fill(select) {
-      if (!select) return;
-      select.innerHTML = '<option value="">选择已保存乐谱…</option>';
-      names.forEach(function (name) {
-        var opt = document.createElement("option");
-        opt.value = name;
-        var count = saved[name].count || 0;
-        opt.textContent = name + "（" + count + " 音）";
-        select.appendChild(opt);
+      const response = await fetch("/api/session/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: stream.sessionId }),
       });
+      data = await response.json();
+    } catch (error) {
+      console.warn("轮询回答进度失败", error);
     }
-    fill(sel);
-    fill(sel2);
-  }
-  function saveCurrentScore() {
-    if (!swin.notes.length) { hint("没有可保存的乐谱", 2000); return; }
-    var name = prompt("请输入乐谱名称：", "我的口琴谱 " + new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }));
-    if (!name || !name.trim()) return;
-    name = name.trim();
-    var saved = getSavedScores();
-    saved[name] = {
-      txt: notesToTxt(swin.notes),
-      count: swin.notes.length,
-      date: Date.now()
-    };
-    setSavedScores(saved);
-    refreshSavedList();
-    hint("已保存：" + name + "（" + swin.notes.length + " 音）", 2600);
-  }
-  function loadSavedScore(name) {
-    if (!name) return;
-    var saved = getSavedScores();
-    if (!saved[name]) { hint("未找到该乐谱", 2000); return; }
-    $("#swinTxt").value = saved[name].txt;
-    swinParse();
-    renderVisualList();
-    swin.lastAppendStart = swin.notes.length;
-    hint("已载入：" + name + "（" + saved[name].count + " 音）", 2400);
-  }
-  function clearScore() {
-    if (!swin.notes.length) return;
-    if (!confirm("确定清空当前乐谱？（已保存的乐谱不受影响）")) return;
-    swin.notes = [];
-    swin.lastAppendStart = 0;
-    $("#swinTxt").value = "";
-    renderSwinKeys();
-    renderVisualList();
-    hint("已清空当前乐谱", 1800);
-  }
-
-  /* ── notes → txt 字符串（三元组） ── */
-  function notesToTxt(notes) {
-    if (!notes || !notes.length) return "";
-    var parts = [];
-    notes.forEach(function (n) {
-      var pitch = n.name || "1";
-      parts.push('"' + pitch + '","' + (n.dur || 200) + 'ms","' + (n.gap || 100) + 'ms"');
-    });
-    return "(" + parts.join(",") + ")";
-  }
-
-  /* ── 可视化编辑器：渲染逐音三输入框行 ── */
-  function renderVisualList() {
-    var box = $("#swinVList");
-    if (!box) return;
-    box.innerHTML = "";
-    if (!swin.notes.length) {
-      box.innerHTML = '<div class="hk-swin-empty">暂无音符，点下方「增加下一音」开始编辑…</div>';
+    if (stream.cancelled) return;
+    const record = data?.streaming;
+    if (record && String(record.answer || "").length >= stream.answer.length) {
+      stream.answer = String(record.answer || "");
+      stream.message.content = stream.answer;
+    }
+    if (record && record.running) {
+      if (stream.sessionId === state.sessionId) renderMessages();
+      pollServerStream(stream, STREAM_POLL_MS);
       return;
     }
-    var frag = document.createDocumentFragment();
-    swin.notes.forEach(function (n, i) {
-      var row = document.createElement("div");
-      row.className = "hk-swin-vrow";
-      row.dataset.idx = i;
+    /* 生成完了（或记录已过期）：用服务端最终答案收尾 */
+    if (record) stream.answer = String(record.answer || stream.answer);
+    await finishChatStream(stream);
+  }, delay || STREAM_POLL_MS);
+}
 
-      var idx = document.createElement("span");
-      idx.className = "hk-swin-vcol hk-swin-vcol-idx";
-      idx.textContent = (i + 1);
+/* ========== 附件：把本机文件 / 图片拖进输入框 ========== */
+/* 说明：
+   - 文本类文件（.txt .md .json .js .py .css .html …）读取内容，发送时随消息一起交给后端；
+   - 图片生成 320px 缩略图，气泡里直接显示小图（文本模型只收到文件名提示）；
+   - 其它二进制文件只记名字与大小。真正的「拼接」在后端 web_app.py 的 compose_message_with_attachments()。 */
+const ATTACH_TEXT_LIMIT = 12000;    // 单个文本附件读取上限（字符），与后端 ATTACH_TEXT_LIMIT 对应
+const ATTACH_PREVIEW_MAX = 320;     // 图片缩略图最长边（像素）
+const ATTACH_TEXT_EXT = [".txt", ".md", ".markdown", ".json", ".jsonl", ".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx",
+  ".py", ".css", ".scss", ".less", ".html", ".htm", ".xml", ".yaml", ".yml", ".toml", ".csv", ".tsv", ".log",
+  ".ini", ".cfg", ".conf", ".env", ".sh", ".bat", ".ps1", ".sql", ".java", ".c", ".h", ".cpp", ".hpp", ".go",
+  ".rs", ".rb", ".php", ".vue", ".svelte"];
 
-      var pIn = document.createElement("input");
-      pIn.className = "hk-swin-vcol hk-swin-vpitch";
-      pIn.type = "text";
-      pIn.value = n.name || "1";
-      pIn.placeholder = "1 / {2} / 【#3】 / i";
-      pIn.title = "音阶：简谱 1234567i，【】低八度 {}高八度 #升半音；或音名 C4 D#5";
+let pendingAttachments = [];   // 还没发送的附件
+let attachmentSeq = 0;
 
-      var dIn = document.createElement("input");
-      dIn.className = "hk-swin-vcol hk-swin-vdur";
-      dIn.type = "number";
-      dIn.min = "10";
-      dIn.step = "10";
-      dIn.value = n.dur || 200;
-      dIn.title = "持续时间（发声时长，ms）";
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(2)} MB`;
+}
 
-      var gIn = document.createElement("input");
-      gIn.className = "hk-swin-vcol hk-swin-vgap";
-      gIn.type = "number";
-      gIn.min = "10";
-      gIn.step = "10";
-      gIn.value = n.gap || 100;
-      gIn.title = "到下一音的间隔（ms）";
+function isImageFile(file) {
+  if (String(file.type || "").startsWith("image/")) return true;
+  return /\.(png|jpe?g|gif|webp|bmp|svg|ico|avif|apng)$/i.test(String(file.name || ""));
+}
 
-      var del = document.createElement("button");
-      del.className = "hk-swin-vcol hk-swin-vdel";
-      del.type = "button";
-      del.textContent = "✕";
-      del.title = "删除此音";
+function isTextLikeFile(file) {
+  const type = String(file.type || "");
+  if (type.startsWith("text/")) return true;
+  if (["application/json", "application/javascript", "application/xml", "application/x-yaml", "application/x-sh", "application/sql"].includes(type)) return true;
+  const name = String(file.name || "").toLowerCase();
+  return ATTACH_TEXT_EXT.some((ext) => name.endsWith(ext));
+}
 
-      row.appendChild(idx); row.appendChild(pIn); row.appendChild(dIn); row.appendChild(gIn); row.appendChild(del);
-      frag.appendChild(row);
-    });
-    box.appendChild(frag);
-  }
-
-  /* ── 可视化编辑后：更新 note + 重新映射 + 同步 textarea + 刷新按键列表 ── */
-  function applyVisualEdit() {
-    var rows = document.querySelectorAll("#swinVList .hk-swin-vrow");
-    var newNotes = [];
-    rows.forEach(function (row) {
-      var pitch = row.querySelector(".hk-swin-vpitch").value.trim() || "1";
-      var dur = parseInt(row.querySelector(".hk-swin-vdur").value, 10);
-      var gap = parseInt(row.querySelector(".hk-swin-vgap").value, 10);
-      if (isNaN(dur) || dur < 10) dur = 200;
-      if (isNaN(gap) || gap < 10) gap = 100;
-      var jp = parseJianpuToken(pitch);
-      var midi = null, name = pitch;
-      if (jp) { name = jianpuOf(jp.key, jp.slot, jp.sharp); }
-      else {
-        midi = parsePitchName(pitch);
-        if (midi === null) { name = pitch; }
-        else { name = pitchName(midi); }
-      }
-      newNotes.push({ name: name, midi: midi, jp: jp, dur: dur, gap: gap });
-    });
-    swin.notes = newNotes;
-    swinResolve();
-    swin.lastAppendStart = swin.notes.length;
-    /* 同步 textarea（不触发 input 事件，避免循环） */
-    var txt = $("#swinTxt");
-    txt.value = notesToTxt(swin.notes);
-    renderSwinKeys();
-  }
-
-  function initSwin() {
-    var drop = $("#swinDrop"), file = $("#swinFile"), txt = $("#swinTxt");
-    drop.addEventListener("click", function () { file.click(); });
-    drop.addEventListener("dragover", function (e) { e.preventDefault(); drop.classList.add("over"); });
-    drop.addEventListener("dragleave", function () { drop.classList.remove("over"); });
-    drop.addEventListener("drop", function (e) {
-      e.preventDefault(); drop.classList.remove("over");
-      var f = e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f) loadSwinFile(f);
-    });
-    file.addEventListener("change", function () { if (file.files[0]) loadSwinFile(file.files[0]); });
-    var debounce = null;
-    txt.addEventListener("input", function () {
-      clearTimeout(debounce);
-      debounce = setTimeout(function () { swinParse(); renderVisualList(); }, 300);
-    });
-    $("#swinParse").addEventListener("click", function () { swinParse(); renderVisualList(); });
-    $("#swinBase").addEventListener("change", function () { swin.base = this.value; swinParse(); renderVisualList(); });
-    $("#swinPlay").addEventListener("click", swinPlay);
-    $("#swinStop").addEventListener("click", function () { swinStop(false); });
-    $("#swinLoadExample").addEventListener("click", function () {
-      txt.value = '("1","200ms","120ms","2","180ms","100ms","3","200ms","120ms","4","180ms","100ms","5","220ms","140ms","6","200ms","120ms","7","240ms","160ms","i","400ms","200ms","{1}","200ms","120ms","{2}","180ms","100ms","{3}","200ms","120ms","{i}","400ms","200ms","【5】","300ms","180ms","【3】","280ms","160ms","#4","200ms","120ms","5","400ms","200ms")';
-      swinParse();
-      renderVisualList();
-    });
-
-    /* ── 编辑模式切换 ── */
-    $$(".hk-swin-tab").forEach(function (tab) {
-      tab.addEventListener("click", function () {
-        var mode = this.dataset.mode;
-        $$(".hk-swin-tab").forEach(function (t) { t.classList.toggle("active", t === this); }, this);
-        var textMode = $("#swinTextMode"), visMode = $("#swinVisualMode");
-        if (mode === "visual") {
-          textMode.hidden = true;
-          visMode.hidden = false;
-          renderVisualList();
-        } else {
-          textMode.hidden = false;
-          visMode.hidden = true;
-        }
-      });
-    });
-
-    /* ── 可视化编辑器事件（事件委托） ── */
-    var vbox = $("#swinVList");
-    var vDebounce = null;
-    vbox.addEventListener("input", function (e) {
-      if (!e.target.classList.contains("hk-swin-vpitch") &&
-          !e.target.classList.contains("hk-swin-vdur") &&
-          !e.target.classList.contains("hk-swin-vgap")) return;
-      clearTimeout(vDebounce);
-      vDebounce = setTimeout(applyVisualEdit, 250);
-    });
-    vbox.addEventListener("click", function (e) {
-      if (!e.target.classList.contains("hk-swin-vdel")) return;
-      var row = e.target.closest(".hk-swin-vrow");
-      if (row) row.remove();
-      applyVisualEdit();
-      renderVisualList();
-    });
-    $("#swinAddNote").addEventListener("click", function () {
-      /* 追加新音：默认音阶 1，持续 200ms，间隔 100ms */
-      var last = swin.notes.length ? swin.notes[swin.notes.length - 1] : null;
-      swin.notes.push({
-        name: last ? last.name : "1",
-        midi: last ? last.midi : null,
-        jp: last ? last.jp : null,
-        dur: last ? last.dur : 200,
-        gap: last ? last.gap : 100
-      });
-      swinResolve();
-      swin.lastAppendStart = swin.notes.length;
-      $("#swinTxt").value = notesToTxt(swin.notes);
-      renderSwinKeys();
-      renderVisualList();
-      /* 滚动到最新行 */
-      var rows = vbox.querySelectorAll(".hk-swin-vrow");
-      if (rows.length) rows[rows.length - 1].scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-
-    /* ── 打拍录入节奏面板 ── */
-    $("#swinTapToggle").addEventListener("click", function () {
-      var body = $("#swinTapBody");
-      var arrow = $("#swinTapArrow");
-      body.hidden = !body.hidden;
-      arrow.textContent = body.hidden ? "▼" : "▲";
-    });
-    $("#swinTapBtn").addEventListener("click", function () {
-      if (tapRec.active) stopTapRecord();
-      else startTapRecord();
-    });
-    $("#swinTapPad").addEventListener("click", function () {
-      if (tapRec.active) recordTap();
-      else hint("请先点「开始打拍录制」", 2000);
-    });
-
-    /* ── 乐谱保存 / 载入 / 清空 ── */
-    $("#swinSave").addEventListener("click", saveCurrentScore);
-    $("#swinLoadSaved").addEventListener("click", function () {
-      var name = $("#swinSavedList").value;
-      if (name) loadSavedScore(name);
-      else hint("请先在下拉框选择要载入的乐谱", 2000);
-    });
-    $("#swinSavedList").addEventListener("change", function () {
-      if (this.value) loadSavedScore(this.value);
-    });
-    $("#swinClear").addEventListener("click", clearScore);
-    refreshSavedList();
-
-    /* ── 下载当前乐谱为 txt 文件 ── */
-    $("#swinDownload").addEventListener("click", function () {
-      if (!swin.notes.length) { hint("当前乐谱为空，无可下载内容", 2200); return; }
-      var txt = notesToTxt(swin.notes);
-      var blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "口琴谱_" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".txt";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-      hint("已下载乐谱 txt（" + swin.notes.length + " 音）", 2400);
-    });
-
-    /* ── 打拍设置面板：内联展开/收起 ── */
-    $("#swinTapSetBtn").addEventListener("click", function () {
-      var panel = $("#swinTapSetPanel");
-      panel.hidden = !panel.hidden;
-      this.classList.toggle("open", !panel.hidden);
-    });
-
-    /* ── 删除已保存乐谱（按钮 + 右键，均二次确认） ── */
-    function deleteSavedByName(name) {
-      if (!name) { hint("请先在下拉框选择要删除的乐谱", 2000); return; }
-      if (!confirm("确定删除乐谱「" + name + "」？此操作不可撤销。")) return;
-      var saved = getSavedScores();
-      delete saved[name];
-      setSavedScores(saved);
-      refreshSavedList();
-      hint("已删除乐谱「" + name + "」", 2200);
-    }
-    $("#swinDelSaved").addEventListener("click", function () {
-      deleteSavedByName($("#swinSavedList").value);
-    });
-    $("#swinSavedList").addEventListener("contextmenu", function (e) {
-      e.preventDefault();
-      deleteSavedByName(this.value);
-    });
-  }
-
-  /* ════════ 乐谱表悬浮窗（可拖动 / 调整大小，仅显示按键） ════════ */
-  function fscoreSet(n, pos, total) {
-    var now = $("#fscoreNow"), next = $("#fscoreNext");
-    if (!n) {
-      now.innerHTML = '<span class="hk-fscore-key">—</span><span class="hk-fscore-mod">等待乐谱</span><span class="hk-fscore-pos" id="fscorePos" hidden></span>';
-      next.textContent = "";
-      return;
-    }
-    var keyShow = n.key === "," ? "，" : n.key.toUpperCase();
-    var mod = modInfo(n.slot, n.sharp);
-    var posHtml = "";
-    if (typeof pos === "number" && total) {
-      posHtml = '<span class="hk-fscore-pos">' + (pos + 1) + ' / ' + total + '</span>';
-    }
-    now.innerHTML = '<span class="hk-fscore-key">' + keyShow + '</span>' +
-      '<span class="hk-fscore-mod ' + mod.cls + '">' + mod.label + ' · ' + pitchName(n.midi) + '</span>' + posHtml;
-    var upcoming = [];
-    for (var i = swin.idx; i < Math.min(swin.idx + 4, swin.notes.length); i++) {
-      var nn = swin.notes[i];
-      if (!nn.inRange) continue;
-      upcoming.push((nn.key === "," ? "，" : nn.key.toUpperCase()) + " " + modInfo(nn.slot, nn.sharp).label);
-    }
-    next.textContent = upcoming.join("   ");
-  }
-
-  function initFScore() {
-    var win = $("#hkFScore"), bar = $("#fscoreBar"), rs = $("#fscoreResize");
-    win.style.left = Math.max(16, window.innerWidth - 340) + "px";
-    win.style.top = "120px";
-    win.style.width = "300px";
-
-    /* ── 乐谱/记事本底部切换条（不在最顶上） ── */
-    $$(".hk-fscore-swbtn").forEach(function (tab) {
-      tab.addEventListener("click", function () {
-        var view = this.dataset.view;
-        $$(".hk-fscore-swbtn").forEach(function (t) { t.classList.toggle("active", t === this); }, this);
-        $("#fscoreViewScore").hidden = (view !== "score");
-        $("#fscoreViewNote").hidden = (view !== "note");
-      });
-    });
-    /* ── 记事本：获取已保存乐谱的音阶顺序（仅音阶，不含时长/间隔；间隔≥1000ms处自动换行） ── */
-    $("#fscoreGetSaved").addEventListener("click", function () {
-      var name = $("#fscoreSavedList").value;
-      if (!name) { hint("请先在下拉框选择已保存的乐谱", 2000); return; }
-      var saved = getSavedScores();
-      if (!saved[name]) return;
-      var notes = parseNoteTxt(saved[name].txt);
-      /* 生成音阶顺序文本，间隔≥1000ms处换行 */
-      var lines = [];
-      var curLine = [];
-      for (var i = 0; i < notes.length; i++) {
-        if (i > 0 && notes[i - 1].gap >= 1000) {
-          lines.push(curLine.join(" "));
-          curLine = [];
-        }
-        curLine.push(notes[i].name);
-      }
-      if (curLine.length) lines.push(curLine.join(" "));
-      var text = lines.join("\n");
-      var noteArea = $("#fscoreNote");
-      if (noteArea.value.trim()) {
-        noteArea.value = noteArea.value + "\n" + text;
-      } else {
-        noteArea.value = text;
-      }
-      hint("已获取「" + name + "」音阶顺序（" + notes.length + " 音，长间隔处已换行），追加到记事本", 2600);
-    });
-    /* 悬浮窗已保存列表：右键删除（二次确认） */
-    $("#fscoreSavedList").addEventListener("contextmenu", function (e) {
-      e.preventDefault();
-      var name = this.value;
-      if (!name) { hint("请先在下拉框选择要删除的乐谱", 2000); return; }
-      if (!confirm("确定删除乐谱「" + name + "」？此操作不可撤销。")) return;
-      var saved = getSavedScores();
-      delete saved[name];
-      setSavedScores(saved);
-      refreshSavedList();
-      hint("已删除乐谱「" + name + "」", 2200);
-    });
-    refreshSavedList();
-
-    var drag = null;
-    bar.addEventListener("mousedown", function (e) {
-      if (e.target.closest("button")) return;
-      drag = { x: e.clientX, y: e.clientY, l: win.offsetLeft, t: win.offsetTop };
-      e.preventDefault();
-    });
-    document.addEventListener("mousemove", function (e) {
-      if (!drag) return;
-      win.style.left = Math.max(0, Math.min(window.innerWidth - 80, drag.l + e.clientX - drag.x)) + "px";
-      win.style.top = Math.max(0, Math.min(window.innerHeight - 40, drag.t + e.clientY - drag.y)) + "px";
-    });
-    document.addEventListener("mouseup", function () { drag = null; });
-
-    var rz = null;
-    rs.addEventListener("mousedown", function (e) {
-      rz = { x: e.clientX, y: e.clientY, w: win.offsetWidth, h: win.offsetHeight };
-      e.preventDefault(); e.stopPropagation();
-    });
-    document.addEventListener("mousemove", function (e) {
-      if (!rz) return;
-      win.style.width = Math.max(200, Math.min(560, rz.w + e.clientX - rz.x)) + "px";
-      win.style.height = Math.max(120, Math.min(480, rz.h + e.clientY - rz.y)) + "px";
-    });
-    document.addEventListener("mouseup", function () { rz = null; });
-
-    $("#fscoreMin").addEventListener("click", function () { win.classList.toggle("minimized"); });
-    $("#fscoreClose").addEventListener("click", function () { win.style.display = "none"; });
-    $("#rigFScore").addEventListener("click", function () {
-      win.style.display = (win.style.display === "none") ? "" : "none";
-    });
-  }
-
-  /* ── 启动 ── */
-  function init() {
-    if (window.LabHost) {
+/* 图片 → 小缩略图（dataURL）。存进 localStorage 的历史记录里也不会太大 */
+function fileToThumb(file) {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
       try {
-        LabHost.setTitle("口琴谱解析");
-        LabHost.hint("拖入音频 → 选格式 → 开始解析", 3800);
-      } catch (e) { }
-    }
-    bindEvents();
-    rigInit();
-    initSwin();
-    initFScore();
-    /* 音量滑块 */
-    var volSlider = $("#hkVolume");
-    if (volSlider) {
-      volSlider.addEventListener("input", function () {
-        hkVolume = parseInt(this.value, 10) / 100;
-        var val = $("#hkVolumeVal");
-        if (val) val.textContent = this.value + "%";
-      });
-    }
-    var saved = "";
-    try { saved = localStorage.getItem("hkSoundDir") || ""; } catch (e) { }
-    loadHarmonicaSounds(saved || SOUND_BASE);
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
-})();
-
-/* ═══════════════════════════════════════════════════════════════════════
-   新功能模块（浅色风格，风格沿用上方原版 updream 主页）
-   · MIDI（.mid/.midi）多轨分解 → 音轨展示框（卷帘 / 音轨选择 / 播放 / 导出 / 存库）
-   · txt 双格式：约定格式（音阶·持续·间隔）与 节拍谱（小节/键位/节奏），自动识别
-   · 选择解析格式：修复为可点击单选（radio + 高亮卡片）
-   · 乐谱表：自动演奏时在悬浮窗显示当前演奏到第几个音（红色序号）
-   · F8 播放/停止 · F9 存入乐谱库
-   · 登录态继承主站（auth.js）
-   ═══════════════════════════════════════════════════════════════════════ */
-(function () {
-  "use strict";
-
-  /* 本文件与 common.js 同目录：从当前 script src 推导目录，动态加载 DFH 引擎 */
-  function dfhBase() {
-    try {
-      var src = document.currentScript && document.currentScript.src;
-      if (src) return src.replace(/[^/]*$/, "");
-    } catch (e) { }
-    return "/assets/lab/";
-  }
-
-  function loadCommon(cb) {
-    if (window.DFH) { cb(window.DFH); return; }
-    var s = document.createElement("script");
-    s.src = dfhBase() + "common.js?v=20260917q";
-    s.onload = function () { cb(window.DFH); };
-    s.onerror = function () { console.warn("common.js 加载失败"); };
-    document.head.appendChild(s);
-  }
-
-  loadCommon(function (D) {
-    var $ = function (s) { return document.querySelector(s); };
-    var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
-
-    function toast(t) {
-      var box = $("#hkToast");
-      if (!box) {
-        box = document.createElement("div");
-        box.className = "hk-toast";
-        box.id = "hkToast";
-        document.body.appendChild(box);
+        const scale = Math.min(1, ATTACH_PREVIEW_MAX / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.72));
+      } catch (error) {
+        resolve("");   // SVG 里带外链等情况会画不出来，忽略即可
+      } finally {
+        URL.revokeObjectURL(objectUrl);
       }
-      box.textContent = t;
-      box.classList.add("is-show");
-      clearTimeout(box._t);
-      box._t = setTimeout(function () { box.classList.remove("is-show"); }, 2600);
-    }
-
-    /* 根链接自适应：file:// / GitHub Pages 子路径 / 服务器 /lab 三种形态都可用。
-       - 服务器 /lab（127.0.0.1:8787 的 /lab 路由）→ 绝对 /lab
-       - 挂载在 lab.html（页面在仓库根）→ 相对 "lab.html" / "assets/lab/library.html"
-       - 直接打开 assets/lab/app.html → 相对 "../../lab.html" / "library.html" */
-    function fixRootLinks() {
-      var isFile = location.protocol === "file:";
-      var base = dfhBase();
-      var onServerLab = location.pathname === "/lab" || location.pathname === "/lab/";
-      var inLabDir = !isFile && location.pathname.indexOf("/assets/lab/") >= 0;
-      var labLink = isFile ? base + "../../lab.html" : (onServerLab ? "/lab" : (inLabDir ? "../../lab.html" : "lab.html"));
-      var libLink = isFile ? base + "library.html" : (onServerLab ? "/assets/lab/library.html" : (inLabDir ? "library.html" : "assets/lab/library.html"));
-      var navMap = { "lab.html": labLink, "assets/lab/library.html": libLink };
-      document.querySelectorAll(".hk-nav a[href]").forEach(function (a) {
-        var h = a.getAttribute("href");
-        if (navMap[h]) a.setAttribute("href", navMap[h]);
-      });
-      var rootA = document.querySelector("a[href^='assets/lab/'], a[href='lab.html']");
-      if (rootA && rootA.getAttribute("href") === "lab.html") rootA.setAttribute("href", labLink);
-      /* 历史遗留的绝对 /lab 链接一并修正（GitHub Pages 子路径下会 404） */
-      document.querySelectorAll("a[href^='/lab']").forEach(function (a) {
-        var h = a.getAttribute("href");
-        a.setAttribute("href", labLink + (h.indexOf("#") >= 0 ? h.slice(h.indexOf("#")) : ""));
-      });
-    }
-    fixRootLinks();
-
-    function formatSize(b) {
-      if (b < 1024) return b + " B";
-      if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
-      return (b / 1048576).toFixed(2) + " MB";
-    }
-
-    /* ════════ 登录态：继承主站（auth.js） ════════ */
-    function renderLogin() {
-      var u = D.currentUser();
-      var el = $("#hkLogin");
-      if (!el) return;
-      el.classList.toggle("is-in", !!u);
-      var txt = $("#hkLoginText");
-      if (!txt) return;
-      if (D.Admin && D.Admin.setSession) D.Admin.setSession(u);
-      if (!u) { txt.textContent = "登录"; }
-      else {
-        var name = u.name || "用户";
-        var idPart = u.phone ? u.phone.slice(-4) : "";
-        var av = u.avatar ? '<i class="hk-avatar-mini"><img src="' + D.escapeHtml(u.avatar) + '" alt=""></i>' : '<i class="hk-avatar-mini">' + D.escapeHtml(name.slice(0, 1)) + '</i>';
-        txt.innerHTML = av + D.escapeHtml(name + (idPart ? " #" + idPart : ""));
-      }
-      syncAdminGear();
-      if (D.Admin && D.Admin.__settingsRefresh) D.Admin.__settingsRefresh();
-    }
-    if (D.bindUserPop) D.bindUserPop();
-    function syncAdminGear() {
-      var gear = $("#hkAdminGear");
-      if (!gear) return;
-      gear.hidden = !(D.Admin && D.Admin.isAdmin());
-      var hnav = gear.closest(".hk-nav");
-      if (hnav) hnav.classList.toggle("has-admin", !gear.hidden);
-    }
-    var gearEl = $("#hkAdminGear");
-    if (gearEl) {
-      gearEl.addEventListener("click", function () {
-        location.href = "assets/lab/library.html?admin=1";
-      });
-    }
-    D.onAuthChange(renderLogin);
-    renderLogin();
-    syncAdminGear();
-    if (D.Admin && D.Admin.bindSettings) D.Admin.bindSettings();
-
-    /* ════════ 修复解析格式单选（点击卡片切换 radio + 高亮） ════════ */
-    $$(".hk-format").forEach(function (label) {
-      var input = label.querySelector('input[name="hkFormat"]');
-      if (!input) return;
-      label.addEventListener("click", function () {
-        $$(".hk-format").forEach(function (l) {
-          var i = l.querySelector('input[name="hkFormat"]');
-          if (i) i.checked = false;
-          l.classList.remove("hk-format-active");
-        });
-        input.checked = true;
-        label.classList.add("hk-format-active");
-      });
-    });
-
-    function getSelFormat() {
-      var el = document.querySelector('input[name="hkFormat"]:checked');
-      return el ? el.value : "harmonica";
-    }
-
-    /* ════════ 文件输入接管：MIDI / txt → DFH 解析；音频 → 原版流程 ════════ */
-    var pending = { file: null, kind: null, parsed: null, source: "" };
-
-    function isMidiName(n) { return /\.midi?$/i.test(n || ""); }
-    function isTxtName(n) { return /\.txt$/i.test(n || ""); }
-
-    function acceptFile(file) {
-      if (!file) return null;
-      if (isMidiName(file.name)) return "midi";
-      if (isTxtName(file.name)) return "txt";
-      return null;
-    }
-
-    /* 捕获阶段：先于原版 setFile 执行，MIDI/txt 在此接管 */
-    document.addEventListener("drop", function (e) {
-      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      var kind = acceptFile(f);
-      if (!kind) return;                    /* 音频放行原版 */
-      e.preventDefault();
-      e.stopPropagation();
-      handleNewFile(f, kind);
-    }, true);
-    document.addEventListener("change", function (e) {
-      var t = e.target;
-      if (!t || (t.id !== "hkFile" && t.id !== "swinFile")) return;
-      if (t.id === "swinFile") return;      /* 原版乐谱视窗自己的 txt 拖入保持原样 */
-      var f = t.files && t.files[0];
-      var kind = acceptFile(f);
-      if (!kind) return;                    /* 音频放行原版 */
-      e.preventDefault();
-      e.stopPropagation();
-      handleNewFile(f, kind);
-    }, true);
-
-    function handleNewFile(file, kind) {
-      pending = { file: file, kind: kind, parsed: null, source: "" };
-      var name = file.name || "";
-      $("#hkFileName").textContent = name;
-      $("#hkFileSize").textContent = formatSize(file.size);
-      if ($("#hkPlayer")) { try { URL.revokeObjectURL($("#hkPlayer").src); } catch (err) { } }
-      $("#hkFilebar").hidden = false;
-      $("#hkDrop").hidden = true;
-      $("#hkParse").disabled = false;
-      $("#hkCtaSub").textContent = kind === "midi"
-        ? "点击「开始解析」：分解 MIDI 为多条音轨"
-        : "点击「开始解析」：按所选格式解析 txt 曲谱";
-      $("#hkResult").hidden = true;
-    }
-
-    /* ════════ 解析按钮：MIDI/txt 走新流程，音频走原版 ════════ */
-    document.addEventListener("click", function (e) {
-      if (e.target && e.target.id === "hkParse" && pending.file) {
-        e.preventDefault();
-        e.stopPropagation();
-        runStudioParse();
-      }
-    }, true);
-
-    function runStudioParse() {
-      var f = pending.file;
-      if (!f) return;
-      var btn = $("#hkParse");
-      btn.disabled = true;
-      $("#hkProgress").hidden = false;
-      setStudioProgress(0.05, "读取文件…");
-      var reader = new FileReader();
-      reader.onload = function () {
-        try {
-          if (pending.kind === "midi") {
-            setStudioProgress(0.25, "解析 MIDI 音轨…");
-            var midi = D.parseMidi(reader.result);
-            if (!midi.tracks || !midi.tracks.some(function (t) { return t.notes && t.notes.length; })) {
-              throw new Error("MIDI 中没有可识别的音符");
-            }
-            pending.source = "midi";
-            pending.parsed = midi;
-          } else {
-            setStudioProgress(0.25, "解析 txt 曲谱…");
-            var text = D.decodeText ? D.decodeText(reader.result) : reader.result;
-            var fmt = getSelFormat();
-            var isDelta = D.isDeltaTxt(text);
-            if (isDelta || fmt === "delta") {
-              pending.parsed = D.parseDeltaTxt(text);
-              pending.source = "delta";
-            } else {
-              pending.parsed = D.parseNoteTxt(text);
-              pending.source = "tuple";
-            }
-            if (!pending.parsed.notes || !pending.parsed.notes.length) {
-              throw new Error("txt 中没有解析到音符");
-            }
-          }
-          setStudioProgress(0.55, "生成音轨展示…");
-          openStudioView();
-          setStudioProgress(1, "完成");
-          setTimeout(function () { $("#hkProgress").hidden = true; }, 500);
-        } catch (err) {
-          btn.disabled = false;
-          $("#hkProgress").hidden = true;
-          toast("解析失败：" + err.message);
-          console.error(err);
-        }
-      };
-      reader.onerror = function () {
-        btn.disabled = false;
-        $("#hkProgress").hidden = true;
-        toast("读取文件失败");
-      };
-      if (pending.kind === "midi") reader.readAsArrayBuffer(f);
-      else reader.readAsArrayBuffer(f);
-    }
-
-    function setStudioProgress(p, txt) {
-      var bar = $("#hkProgressBar");
-      if (bar) bar.style.setProperty("width", Math.round(p * 100) + "%", "important");
-      var t = $("#hkProgressText");
-      if (t) t.textContent = txt || "解析中…";
-    }
-
-    /* ════════ 音轨展示框 ════════ */
-    var studio = {
-      tracks: [],           /* [{name, notes}] */
-      on: [],               /* 每轨开关 */
-      sel: 0,               /* 当前选中轨 */
-      bpm: 120,
-      title: "",
-      source: "",
-      playing: false,
-      raf: 0,
-      ctx0: 0,
-      idx: 0,
-      seek: 0,
-      melody: [],           /* 合并后按时间排序的音符 [{midi,start,dur}] */
-      playable: [],         /* 映射后的口琴音符 [{key,slot,sharp,inRange,start,dur,midi}] */
-      baseOct: "auto",
-      foldedCount: 0,
-      chordSkipped: 0
     };
+    image.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(""); };
+    image.src = objectUrl;
+  });
+}
 
-    function openStudioView() {
-      var src = pending.parsed, title = pending.file.name.replace(/\.[^.]+$/, "") || "未命名";
-      studio.title = title;
-      studio.source = pending.source;
-      studio.bpm = src.bpm || 120;
-      studio.on = [];
-      if (pending.kind === "midi") {
-        studio.tracks = src.tracks.filter(function (t) { return t.notes && t.notes.length; });
-        if (!studio.tracks.length) studio.tracks = src.tracks;
-        studio.sel = 0;
-        /* 默认选中主旋律轨：优先名称含 melody/lead/vocal/main，否则第一条非鼓轨，否则第一条 */
-        var best = 0;
-        var leadIdx = -1, firstNondrum = -1;
-        for (var i = 0; i < studio.tracks.length; i++) {
-          var tn = (studio.tracks[i].name || "").toLowerCase();
-          if (!studio.tracks[i].drum && firstNondrum < 0) firstNondrum = i;
-          if (!studio.tracks[i].drum && /(melody|lead|vocal|main|主旋律|旋律|lead)/.test(tn)) { leadIdx = i; break; }
-        }
-        if (leadIdx >= 0) best = leadIdx;
-        else if (firstNondrum >= 0) best = firstNondrum;
-        studio.sel = best;
-        studio.on = studio.tracks.map(function (_, i) { return i === best; });
-      } else {
-        /* txt 两种格式：先转成秒轴旋律（txtNotesToMelody），否则 start/dur 不可用 */
-        var conv = D.txtNotesToMelody(src);
-        studio.tracks = [{ name: pending.source === "delta" ? "节拍谱" : "约定格式", notes: conv.melody }];
-        studio.baseOct = conv.base;
-        studio.sel = 0;
-        studio.on = [true];
-      }
-      $("#stName").value = title;
-      $("#stKey").textContent = pending.kind === "midi" ? "MIDI · " + studio.tracks.length + " 轨" : "TXT";
-      $("#stMeta").textContent = buildMetaLine();
-      renderTrackSelect();
-      renderTrackToggle();
-      /* 重新解析：先重建当前音轨的旋律/映射，丢弃上一首的 */
-      rebuildMelody();
-      $("#stSeek").value = 0;
-      studio.seek = 0;
-      studio.playing = false;
-      if (studio.raf) cancelAnimationFrame(studio.raf);
-      studio.raf = 0;
-      D.audio && D.audio.stop && D.audio.stop();
-      $("#stPlay").disabled = false;
-      $("#stStop").disabled = true;
-      /* 解析框 → 音轨展示框 */
-      $("#hkUpload").hidden = true;
-      $("#hkFormat").hidden = true;
-      $("#hkGo").hidden = true;
-      $("#hkStudioView").hidden = false;
-      $("#hkStudioView").scrollIntoView({ behavior: "smooth", block: "start" });
-      toast("解析完成：" + studio.tracks.length + " 条音轨 / " + totalNoteCount() + " 音符");
-    }
-
-    function totalNoteCount() {
-      return studio.tracks.reduce(function (s, t) { return s + (t.notes ? t.notes.length : 0); }, 0);
-    }
-
-    function buildMetaLine() {
-      var n = totalNoteCount();
-      var d = 0;
-      studio.tracks.forEach(function (t) {
-        (t.notes || []).forEach(function (x) {
-          if (x.start + x.dur > d) d = x.start + x.dur;
-        });
-      });
-      return n + " 音符 · 时长 " + D.formatClock(d) + " · BPM " + studio.bpm +
-        (pending.kind === "midi" ? " · 已按时间合并音轨" : "") +
-        (studio.source === "delta" ? " · 节拍谱" : studio.source === "tuple" ? " · 约定格式" : "");
-    }
-
-    function renderTrackSelect() {
-      var sel = $("#stTrackSel");
-      sel.innerHTML = "";
-      studio.tracks.forEach(function (t, i) {
-        var o = document.createElement("option");
-        o.value = i;
-        var nm = (t.name || ("音轨 " + (i + 1))).trim() || ("音轨 " + (i + 1));
-        o.textContent = nm + "（" + (t.notes ? t.notes.length : 0) + " 音" + (t.drum ? "·鼓" : "") + "）";
-        sel.appendChild(o);
-      });
-      sel.value = studio.sel;
-    }
-
-    function renderTrackToggle() {
-      var box = $("#stTrackToggle");
-      box.innerHTML = "";
-      studio.tracks.forEach(function (t, i) {
-        var b = document.createElement("button");
-        b.type = "button";
-        b.className = "hk-trackbtn" + (studio.on[i] ? " is-on" : "");
-        var nm = (t.name || ("音轨 " + (i + 1))).trim() || ("音轨 " + (i + 1));
-        b.textContent = (i + 1) + " " + nm + (t.drum ? "·鼓" : "");
-        b.addEventListener("click", function () {
-          studio.on[i] = !studio.on[i];
-          b.classList.toggle("is-on", studio.on[i]);
-          rebuildMelody();
-        });
-        box.appendChild(b);
-      });
-    }
-
-    /* 合并开启音轨 → 排序 → 移调/折叠映射 */
-    function rebuildMelody() {
-      var merged = [];
-      studio.tracks.forEach(function (t, i) {
-        if (!studio.on[i]) return;
-        (t.notes || []).forEach(function (x) {
-          merged.push({ midi: x.midi, start: x.start, dur: x.dur });
-        });
-      });
-      merged.sort(function (a, b) { return a.start - b.start || b.midi - a.midi; });
-      var ex = D.extractMelody(merged);
-      studio.chordSkipped = ex.chordSkipped;
-      var transpose = Number($("#stTranspose").value || 0);
-      var fold = $("#stFold").checked;
-      var res = D.resolveMelody(ex.melody, { transpose: transpose, fold: fold, baseOct: "auto" });
-      studio.melody = merged;
-      studio.playable = res.notes;
-      studio.baseOct = res.base;
-      studio.foldedCount = res.foldedCount;
-      renderStudioRoll();
-    }
-
-    /* ── 钢琴卷帘 ── */
-    function studioGeom() {
-      var el = $("#stRoll");
-      var W = el.clientWidth || 800, H = el.clientHeight || 210;
-      var padL = 34, padB = 16;
-      var notes = studio.playable;
-      var d = 0;
-      notes.forEach(function (n) { if (n.start + n.dur > d) d = n.start + n.dur; });
-      d = Math.max(1, d);
-      var pxps = 40;  /* 固定 40px/秒，避免长曲被压缩成一屏 */
-      var lo = 127, hi = 0;
-      notes.forEach(function (n) {
-        if (n.midi < lo) lo = n.midi;
-        if (n.midi > hi) hi = n.midi;
-      });
-      if (!notes.length) { lo = 60; hi = 72; }
-      lo = Math.floor((lo - 2) / 12) * 12;
-      hi = Math.ceil((hi + 3) / 12) * 12;
-      var rows = hi - lo, rowH = (H - padB) / rows;
-      return { W: W, H: H, padL: padL, padB: padB, pxps: pxps, lo: lo, hi: hi, rowH: rowH, d: d };
-    }
-
-    function renderStudioRoll() {
-      var g = studioGeom(), svg = $("#stSvg");
-      var contentW = Math.max(g.W, g.padL + g.d * g.pxps + 6);
-      svg.setAttribute("viewBox", "0 0 " + contentW + " " + g.H);
-      svg.setAttribute("width", contentW);
-      svg.setAttribute("data-content-w", contentW);
-      var html = "";
-      for (var m = g.lo; m <= g.hi; m++) {
-        var y = g.H - g.padB - (m - g.lo) * g.rowH;
-        var pc = D.mod12(m);
-        if ([1, 3, 6, 8, 10].indexOf(pc) >= 0)
-          html += '<rect x="' + g.padL + '" y="' + y + '" width="' + (contentW - g.padL) + '" height="' + g.rowH + '" fill="rgba(37,99,235,.035)"/>';
-        if (pc === 0 || pc === 5 || pc === 7)
-          html += '<text class="hk-rowlabel" x="3" y="' + (y + g.rowH * .7) + '">' + D.pitchName(m) + '</text>';
-      }
-      studio.playable.forEach(function (n) {
-        var x = g.padL + n.start * g.pxps;
-        var w = Math.max(3, n.dur * g.pxps - 1);
-        var yy = g.H - g.padB - (n.midi - g.lo + .85) * g.rowH;
-        var h = Math.max(3, g.rowH * .72);
-        var cls = "hk-note-rect" + (!n.inRange ? " is-skip" : n.folded ? " is-fold" : "");
-        html += '<rect class="' + cls + '" x="' + x.toFixed(1) + '" y="' + yy.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '"/>';
-      });
-      html += '<line class="hk-playhead" id="stHead" x1="' + g.padL + '" y1="0" x2="' + g.padL + '" y2="' + (g.H - g.padB) + '"/>';
-      svg.innerHTML = html;
-      var d = studioGeom().d;
-      $("#stDur").textContent = D.formatTime(d);
-      $("#stCur").textContent = D.formatTime(0);
-    }
-
-    function studioUpdateHead() {
-      var g = studioGeom(), line = $("#stHead");
-      if (!line) return;
-      var x = g.padL + studio.seek * g.pxps;
-      line.setAttribute("x1", x);
-      line.setAttribute("x2", x);
-      $("#stCur").textContent = D.formatTime(studio.seek);
-      /* 自动右滚：播放头越过容器右半区时跟随滚动 */
-      var roll = $("#stRoll");
-      if (roll) {
-        var maxScroll = roll.scrollWidth - roll.clientWidth;
-        var target = x - roll.clientWidth * 0.45;
-        if (target > roll.scrollLeft && maxScroll > 0) {
-          roll.scrollLeft = Math.min(target, maxScroll);
-        }
+async function addFilesToAttachments(fileList) {
+  const files = Array.from(fileList || []).slice(0, 10);
+  if (!files.length) return;
+  for (const file of files) {
+    const attachment = { id: `att-${++attachmentSeq}`, name: file.name || "未命名文件", size: file.size || 0, kind: "file", text: "", preview: "" };
+    if (isImageFile(file)) {
+      attachment.kind = "image";
+      attachment.preview = await fileToThumb(file);
+    } else if (isTextLikeFile(file) && file.size <= 4 * 1024 * 1024) {
+      try {
+        attachment.kind = "text";
+        attachment.text = (await file.text()).slice(0, ATTACH_TEXT_LIMIT);
+      } catch (error) {
+        attachment.kind = "file";
       }
     }
+    pendingAttachments.push(attachment);
+  }
+  renderPendingAttachments();
+  $("#typingState").textContent = `已添加 ${files.length} 个附件`;
+  inputEl.focus();
+}
 
-    /* ── 播放（真实口琴采样） ── */
-    function studioStop(silent) {
-      studio.playing = false;
-      if (studio.raf) cancelAnimationFrame(studio.raf);
-      studio.raf = 0;
-      D.audio.stop();
-      $("#stPlay").disabled = false;
-      $("#stStop").disabled = true;
-      if (!silent) studio.seek = 0;
-      studioUpdateHead();
-    }
-    /* 切屏：页面隐藏时暂停（保留进度），回到页面时从暂停处继续 */
-    document.addEventListener("visibilitychange", function () {
-      if (document.hidden) {
-        if (studio.playing) { studio.wasPlaying = true; studioStop(true); }
-      } else {
-        if (studio.wasPlaying) { studio.wasPlaying = false; studioPlay(); }
-      }
-    });
-    /* 切屏：页面隐藏时暂停（保留进度），回到页面时从暂停处继续 */
-    document.addEventListener("visibilitychange", function () {
-      if (document.hidden) {
-        if (studio.playing) { studio.wasPlaying = true; studioStop(true); }
-      } else {
-        if (studio.wasPlaying) { studio.wasPlaying = false; studioPlay(); }
-      }
-    });
-
-    function studioPlay() {
-      D.audio.ensure();
-      D.audio.loadSounds();
-      if (D.audio.setVolume) D.audio.setVolume(Number($("#stVol").value || 80) / 100);
-      studioStop(true);
-      var dur = studioGeom().d;
-      if (studio.seek >= dur - .05) studio.seek = 0;
-      studio.playing = true;
-      var ctx = D.audio.ensure();
-      studio.ctx0 = ctx.currentTime - studio.seek;
-      studio.idx = studio.playable.findIndex(function (n) { return n.start >= studio.seek - .02; });
-      if (studio.idx < 0) studio.idx = 0;
-      $("#stPlay").disabled = true;
-      $("#stStop").disabled = false;
-      var speed = Number($("#stSpeed").value || 100) / 100;
-      var legato = Number($("#stLegato").value || 92) / 100;
-      (function tick() {
-        if (!studio.playing) return;
-        var now = D.audio.ensure().currentTime;
-        while (studio.idx < studio.playable.length) {
-          var n = studio.playable[studio.idx];
-          var when = studio.ctx0 + n.start / speed;
-          if (when > now + .15) break;
-          if (n.inRange && !$("#stMute").checked) {
-            var nextStart = null;
-            for (var j = studio.idx + 1; j < studio.playable.length; j++) {
-              if (studio.playable[j].start > n.start) { nextStart = studio.playable[j].start; break; }
-            }
-            var gap = nextStart !== null ? (nextStart - n.start) / speed : n.dur / speed;
-            try {
-              D.audio.play(n.midi, Math.max(.1, Math.min(n.dur / speed, gap * legato)), Math.max(when, now - .02));
-            } catch (audioErr) { }
-          }
-          /* 乐谱表悬浮窗：显示当前音 + 序号 */
-          fscoreRender(n, studio.idx, studio.playable.length);
-          studio.idx++;
-        }
-        studio.seek = Math.min(dur, (now - studio.ctx0) * speed);
-        studioUpdateHead();
-        var lastEnd = studio.playable.length
-          ? (studio.playable[studio.playable.length - 1].start + studio.playable[studio.playable.length - 1].dur) / speed
-          : dur;
-        if (studio.seek >= Math.max(dur, lastEnd)) {
-          studio.seek = dur;
-          studioUpdateHead();
-          studioStop(true);
-          fscoreClear();
-          return;
-        }
-        studio.raf = requestAnimationFrame(tick);
-      })();
-    }
-
-    /* ── 乐谱表悬浮窗渲染（与原版 fscoreSet 同构 + 红色序号） ── */
-    function fscoreRender(n, idx, total) {
-      var now = $("#fscoreNow"), next = $("#fscoreNext");
-      if (!now) return;
-      var keyShow = n.key === "," ? "，" : n.key.toUpperCase();
-      var mod = D.modInfo(n.slot, n.sharp);
-      var posHtml = "";
-      if (typeof idx === "number" && total) {
-        posHtml = '<span class="hk-fscore-pos">' + (idx + 1) + " / " + total + "</span>";
-      }
-      now.innerHTML = '<span class="hk-fscore-key">' + keyShow + '</span>' +
-        '<span class="hk-fscore-mod ' + mod.cls + '">' + mod.label + " · " + D.pitchName(n.midi) + "</span>" +
-        posHtml;
-      var upcoming = [];
-      for (var i = idx + 1; i < Math.min(idx + 5, studio.playable.length); i++) {
-        var nn = studio.playable[i];
-        if (!nn.inRange) continue;
-        upcoming.push((nn.key === "," ? "，" : nn.key.toUpperCase()) + " " + D.modInfo(nn.slot, nn.sharp).label);
-      }
-      if (next) next.textContent = upcoming.join("   ");
-      var win = $("#hkFScore");
-      if (win && win.hidden === false) { /* 保持原样 */ }
-    }
-
-    function fscoreClear() {
-      var now = $("#fscoreNow"), next = $("#fscoreNext");
-      if (now) now.innerHTML = '<span class="hk-fscore-key">—</span><span class="hk-fscore-mod">等待乐谱</span><span class="hk-fscore-pos" id="fscorePos" hidden></span>';
-      if (next) next.textContent = "";
-    }
-
-    /* ════════ 导出 / 存库 ════════ */
-    function exportTupleTxt() {
-      if (!studio.playable.length) { toast("还没有可导出的曲谱"); return; }
-      var name = ($("#stName").value || "").trim() || studio.title;
-      var txt = D.buildTupleTxt(name, { notes: studio.playable, bpm: studio.bpm }, studio.baseOct);
-      D.downloadText(name + ".txt", txt);
-      toast("已导出约定格式 txt");
-    }
-
-    function exportMidi() {
-      if (!studio.melody.length) { toast("还没有可导出的曲谱"); return; }
-      var name = ($("#stName").value || "").trim() || studio.title;
-      var notes = studio.melody.filter(function (n) { return n.midi > 0; });
-      if (!notes.length) notes = studio.melody;
-      var bytes = D.buildMidi(notes, { bpm: studio.bpm, trackName: name });
-      D.downloadBytes(name + ".mid", bytes);
-      toast("已导出 MIDI");
-    }
-
-    function saveToLibrary() {
-      if (!studio.playable.length) { toast("还没有可保存的曲谱"); return; }
-      var name = ($("#stName").value || "").trim() || studio.title;
-      var user = D.currentUser();
-      var uploader = user ? user.name : "匿名投稿者";
-      var tags = pending.kind === "midi" ? ["MIDI", "多音轨"] : ["txt"];
-      var rec;
-      if (pending.source === "midi") {
-        rec = D.buildRecord({
-          title: name, composer: "未标注原作者", uploader: uploader, tags: tags,
-          source: "midi", bpm: studio.bpm, tracks: studio.tracks, fold: $("#stFold").checked
-        });
-      } else {
-        rec = D.buildRecord({
-          title: name, composer: "未标注原作者", uploader: uploader, tags: tags,
-          source: pending.source, bpm: studio.bpm, parsedTxt: pending.parsed, fold: $("#stFold").checked
-        });
-      }
-      D.Store.save(rec);
-      toast("已存入乐谱库：" + name);
-    }
-
-    function revertToParse() {
-      studioStop(true);
-      $("#hkStudioView").hidden = true;
-      $("#hkUpload").hidden = false;
-      $("#hkFormat").hidden = false;
-      $("#hkGo").hidden = false;
-      $("#hkFilebar").hidden = true;
-      $("#hkDrop").hidden = false;
-      $("#hkParse").disabled = true;
-      $("#hkCtaSub").textContent = "请先拖入一个 MIDI / txt / 音频文件";
-      pending = { file: null, kind: null, parsed: null, source: "" };
-      $("#hkStudioView").scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
-    /* ════════ 事件绑定 ════════ */
-    $("#stTrackSel").addEventListener("change", function () {
-      studio.sel = Number(this.value);
-      /* 选中单轨展示（开关仍可合并） */
-      studio.on = studio.tracks.map(function (_, i) { return i === studio.sel; });
-      renderTrackToggle();
-      rebuildMelody();
-    });
-    $("#stTranspose").addEventListener("input", function () {
-      $("#stTransposeVal").textContent = (Number(this.value) > 0 ? "+" : "") + this.value;
-      rebuildMelody();
-    });
-    $("#stFold").addEventListener("change", rebuildMelody);
-    $("#stSpeed").addEventListener("input", function () { $("#stSpeedVal").textContent = this.value + "%"; });
-    $("#stLegato").addEventListener("input", function () { $("#stLegatoVal").textContent = this.value + "%"; });
-    $("#stBreath").addEventListener("input", function () { $("#stBreathVal").textContent = this.value + "%"; });
-    $("#stVol").addEventListener("input", function () {
-      var v = Number(this.value);
-      $("#stVolVal").textContent = v + "%";
-      if (D.audio && D.audio.setVolume) D.audio.setVolume(v / 100);
-    });
-    $("#stPlay").addEventListener("click", studioPlay);
-    $("#stStop").addEventListener("click", function () { studioStop(false); });
-    $("#stSeek").addEventListener("input", function () {
-      if (studio.playing) { studioStop(true); }
-      var dur = studioGeom().d;
-      studio.seek = Number(this.value) / 1000 * dur;
-      studioUpdateHead();
-    });
-    $("#stExportTxt").addEventListener("click", exportTupleTxt);
-    $("#stExportMidi").addEventListener("click", exportMidi);
-    $("#stSaveLib").addEventListener("click", saveToLibrary);
-    $("#stRevert").addEventListener("click", revertToParse);
-    var rechooseEl = $("#hkRechoose");
-    if (rechooseEl) {
-      rechooseEl.addEventListener("click", function () {
-        pending = { file: null, kind: null, parsed: null, source: "" };
-      });
-    }
-    window.addEventListener("resize", function () {
-      if (!$("#hkStudioView").hidden) renderStudioRoll();
-    });
-
-    /* F8 播放/停止 · F9 存入乐谱库 */
-    document.addEventListener("keydown", function (e) {
-      var t = e.target;
-      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      if (e.key === "F8") {
-        e.preventDefault();
-        if ($("#hkStudioView") && !$("#hkStudioView").hidden) {
-          if (studio.playing) studioStop(false);
-          else studioPlay();
-        } else if ($("#swinPlay") && !$("#swinPlay").disabled) {
-          $("#swinPlay").click();
-        }
-      } else if (e.key === "F9") {
-        e.preventDefault();
-        if ($("#hkStudioView") && !$("#hkStudioView").hidden) saveToLibrary();
-        else if ($("#stSaveLib") && !$("#hkStudioView").hidden) saveToLibrary();
-      }
+function renderPendingAttachments() {
+  const holder = $("#attachList");
+  if (!holder) return;
+  holder.hidden = !pendingAttachments.length;
+  holder.innerHTML = pendingAttachments.map((item) => {
+    const thumb = item.kind === "image" && item.preview
+      ? `<img class="attach-thumb" src="${item.preview}" alt="">`
+      : `<span class="attach-icon">${item.kind === "text" ? "📄" : item.kind === "image" ? "🖼" : "📦"}</span>`;
+    return `<span class="attach-chip" title="${escapeHtml(item.name)}">
+      ${thumb}
+      <span class="attach-name">${escapeHtml(item.name)}</span>
+      <span class="attach-size">${formatBytes(item.size)}</span>
+      <button class="attach-remove" type="button" data-attach-id="${item.id}" aria-label="移除附件">×</button>
+    </span>`;
+  }).join("");
+  holder.querySelectorAll("[data-attach-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      pendingAttachments = pendingAttachments.filter((item) => item.id !== button.dataset.attachId);
+      renderPendingAttachments();
     });
   });
-})();
+}
+
+/* 气泡上方展示附件（图片直接出缩略图） */
+function messageAttachmentsMarkup(item) {
+  const list = item.attachments || [];
+  if (!list.length) return "";
+  return `<div class="bubble-attachments">${list.map((file) => {
+    const caption = `${escapeHtml(file.name)}${file.kind === "image" ? "" : ` · ${formatBytes(file.size)}`}`;
+    if (file.kind === "image" && file.preview) {
+      return `<span class="bubble-attach image"><img src="${file.preview}" alt="${escapeHtml(file.name)}"><span class="attach-caption">${caption}</span></span>`;
+    }
+    return `<span class="bubble-attach"><span>${file.kind === "text" ? "📄" : "📦"}</span>${caption}</span>`;
+  }).join("")}</div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ★ 交付格式规范（唯一出口，2026-09-13 定）★ 完整说明见 web/DELIVERY-FORMAT.md
+   ───────────────────────────────────────────────────────────
+   【铁则】页面上凡是「AI 返回文件」（markdown 代码块 / 写进空间的文件 / 生成的图片），
+   一律走下面这条链路，不要再另写第二套卡片、也不要把按钮放回气泡里：
+     ① 气泡里 = 内容本体：
+          · 代码块 → assistantContentMarkup 的 <pre class="code-block">（无卡片边框、无按钮）
+          · 图片   → assistantImagesMarkup 的 .deliver-image > img.deliver-photo
+     ② 气泡外 = 操作集合：assistantDeliverTrayMarkup 生成 .deliver-tray 小卡牌
+          （一行一个交付物：类型图标 + 名字 + 大小/行数 + 图标按钮「打开↗ / 保存⤓📁」）
+     ③ 渲染入口只有 renderMessages() 一处（body 与 tray 成对生成）；新增交付类型就往
+        assistantDeliverTrayMarkup 里加一行样式，不要新建 HTML 结构。
+   【对不上号就会出错的两个 token 约定】
+     · 代码块 code-{消息下标}-{块下标}：气泡里的 pre 与卡牌按钮共用，内容存在 codeFileStore；
+     · 图片   shot-{消息下标}-{图下标}：data-shot ↔ [data-image-size]，图加载完回填宽高。
+   ───────────────────────────────────────────────────────────
+   【写 HTML 的坑】气泡是 white-space:pre-wrap，模板里的换行+缩进会被当空行渲染，
+   交付区 HTML 一律拼成「一整行」（旧 .deliver-card 就因此比图高 158px，看着像一圈空框）。
+   ═══════════════════════════════════════════════════════════════ */
+const CODE_LANG_EXT = {
+  python: "py", py: "py", javascript: "js", js: "js", typescript: "ts", ts: "ts",
+  json: "json", markdown: "md", md: "md", html: "html", htm: "html", css: "css",
+  bash: "sh", sh: "sh", shell: "sh", zsh: "sh", powershell: "ps1", ps1: "ps1",
+  sql: "sql", java: "java", c: "c", cpp: "cpp", "c++": "cpp", csharp: "cs", cs: "cs",
+  go: "go", rust: "rs", rs: "rs", ruby: "rb", rb: "rb", php: "php", kotlin: "kt",
+  swift: "swift", yaml: "yaml", yml: "yml", toml: "toml", ini: "ini", cfg: "ini",
+  text: "txt", txt: "txt", vue: "vue", jsx: "jsx", tsx: "tsx", xml: "xml", diff: "diff",
+};
+const codeFileStore = new Map();   // token → { name, lang, content }（气泡里的代码块与卡牌上的按钮共用）
+
+function parseFenceInfo(info) {
+  const raw = String(info || "").trim().replace(/^\{|\}$/g, "");
+  let lang = "";
+  let name = "";
+  raw.split(/[\s,]+/).filter(Boolean).forEach((token) => {
+    const explicit = token.match(/^(?:filename|file|name)[=:](.+)$/i);
+    if (explicit && !name) { name = explicit[1].replace(/^["']|["']$/g, ""); return; }
+    if (!name && /\.[A-Za-z0-9]{1,8}$/.test(token)) { name = token; return; }
+    if (!lang && /^[A-Za-z][A-Za-z0-9+.#-]*$/.test(token)) lang = token.toLowerCase();
+  });
+  return { lang, name };
+}
+
+/* ★ AI 回复的显示正文：先去掉首尾空白再渲染。
+   模型习惯以空行开头 / 结尾（实测存档里大量 "\n\n..."），气泡是 white-space:pre-wrap，
+   这些空行会被原样渲染成一大段空白（用户反馈「文字不在最顶上，要一大段空气」）。
+   只影响显示 —— 存档内容、发给模型的上下文都保持原样。 */
+function displayAnswer(raw) {
+  return String(raw ?? "").replace(/^\s+|\s+$/g, "");
+}
+
+/* 把正文切成「文字片段 / 代码块」：气泡内渲染与气泡外的下载小卡牌都读这一份结果，
+   两边因此拿到同一个 token（code-{消息下标}-{块下标}）—— 这也是交付格式规范的一部分。 */
+function messageParts(content, messageIndex) {
+  const parts = [];
+  const pattern = /```([^\n`]*)\r?\n([\s\S]*?)(?:```(?:\s*\n|$)|$)/g;
+  let cursor = 0;
+  let match;
+  let codeIndex = 0;
+  while ((match = pattern.exec(content))) {
+    const before = content.slice(cursor, match.index);
+    if (before) parts.push({ type: "text", text: before });
+    const info = parseFenceInfo(match[1]);
+    parts.push({
+      type: "code",
+      token: `code-${messageIndex}-${codeIndex++}`,
+      name: info.name,
+      lang: info.lang,
+      content: match[2] || "",
+    });
+    cursor = match.index + match[0].length;
+  }
+  const rest = content.slice(cursor);
+  if (rest) parts.push({ type: "text", text: rest });
+  return parts;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   AI 交付区（唯一渲染出口；规范见文件头「交付格式规范」/ web/DELIVERY-FORMAT.md）
+   ───────────────────────────────────────────────────────────
+   · 气泡里（内容本体）：代码块 .code-block、图片 .deliver-image + .deliver-photo；
+     一律平铺，不套带边框的卡片 —— 边上不留任何「无名框」，也不放按钮；
+   · 气泡外（操作集合）：.deliver-tray 小卡牌，一行一个交付物
+     = 类型图标 + 文件名 + 大小/行数 + 图标按钮；
+   · 图标按钮：打开 ↗、保存到本机 ⤓/📁（点一下就弹「选择文件夹」对话框，
+     见 saveBlobToPickedFolder / saveRemoteImageToPickedFolder / saveSpaceFileToPickedFolder）
+   ⚠ 这里的模板字符串一律写成「一整行」：气泡是 white-space:pre-wrap，
+     模板里的缩进换行会被当成空行渲染，内容边上就会多出莫名其妙的空白。
+   ══════════════════════════════════════════════════════════════ */
+
+/* 交付区用的小图标（线稿风格，颜色跟随 CSS 的 currentColor） */
+const DELIVER_ICON = {
+  image: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 15l-5-5L5 20"/></svg>',
+  folder: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  file: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+  code: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>',
+  open: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>',
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>',
+  space: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><path d="M12 10v6"/><path d="M9.4 13.4L12 16l2.6-2.6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+};
+
+function imageFileName(image) {
+  const base = String(image.prompt || "").trim().replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 24) || "AI绘图";
+  return `${base}-${String(Date.now()).slice(-6)}.png`;
+}
+
+/* 外链图片拿不到真实文件大小：dataURL 能直接从 base64 算，其它等图加载完用「宽 × 高」补上 */
+function dataUrlBytes(src) {
+  const base64 = String(src).split(",")[1] || "";
+  const padding = (base64.match(/=+$/) || [""])[0].length;
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+}
+
+function imageMetaLabel(image, src) {
+  if (Number(image.size)) return formatBytes(image.size);
+  if (/^data:image\//i.test(src)) {
+    const bytes = dataUrlBytes(src);
+    if (bytes) return formatBytes(bytes);
+  }
+  return "";   // 空着，等 load 事件补「宽 × 高」
+}
+
+/* 文件卡片左侧的类型图标：图片 / 代码 / 普通文件 */
+function fileTypeIcon(name) {
+  if (/\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|apng)$/i.test(name)) return DELIVER_ICON.image;
+  if (/\.(py|js|mjs|cjs|ts|jsx|tsx|css|scss|less|html?|xml|json|jsonl|csv|md|ya?ml|toml|java|c|h|cpp|hpp|go|rs|rb|php|vue|svelte|sh|bat|ps1|sql|ini|cfg|conf|log|txt)$/i.test(name)) return DELIVER_ICON.code;
+  return DELIVER_ICON.file;
+}
+
+/* 气泡里的图和气泡外卡牌里的那一行，靠这个 token 对上（图加载完用它回填「宽 × 高」） */
+function imageShotToken(messageIndex, imageIndex) {
+  return `shot-${messageIndex}-${imageIndex}`;
+}
+
+/* ① 气泡里的图片：只负责「显示」+ 淡入 / 破图两种状态，没有边框、没有内边距 */
+function assistantImagesMarkup(item, messageIndex) {
+  const images = Array.isArray(item.images) ? item.images : [];
+  const blocks = images.map((image, imageIndex) => {
+    const src = String(image.url || "");
+    if (!src) return "";
+    const prompt = String(image.prompt || "AI 生成图片");
+    return `<div class="deliver-image" data-shot="${imageShotToken(messageIndex, imageIndex)}"><img class="deliver-photo" src="${escapeHtml(src)}" alt="${escapeHtml(prompt)}" loading="lazy"><span class="deliver-broken">图片没能加载出来，点小卡牌上的「打开」去原图看看</span></div>`;
+  }).filter(Boolean).join("");
+  return blocks ? `<div class="bubble-returns">${blocks}</div>` : "";
+}
+
+/* ② 气泡外面的「下载小卡牌」：图片 / 代码块 / 空间文件共用一套行样式（图标 + 名字 + 说明 + 按钮） */
+function assistantDeliverTrayMarkup(item, messageIndex) {
+  const files = Array.isArray(item.files) ? item.files : [];
+  const images = Array.isArray(item.images) ? item.images : [];
+  // markdown 代码块也算「返回的文件」，同样在这里出一行
+  // ⚠ 必须与 assistantContentMarkup 用同一条 displayAnswer 正文，token 才对得上
+  const codeParts = messageParts(displayAnswer(item.content), messageIndex).filter((part) => part.type === "code");
+  if (!files.length && !images.length && !codeParts.length) return "";
+
+  const imageRows = images.map((image, imageIndex) => {
+    const src = String(image.url || "");
+    if (!src) return "";
+    const name = imageFileName(image);
+    const prompt = String(image.prompt || "AI 生成图片");
+    const meta = imageMetaLabel(image, src);
+    // 外链图 / 内嵌图都提供保存按钮（点开就是「选择文件夹」对话框，存进所选文件夹）
+    const spaceBtn = /^https?:/i.test(src)
+      ? `<button type="button" class="deliver-icon-btn" data-image-action="space" data-image-url="${escapeHtml(src)}" data-image-name="${escapeHtml(name)}" title="选择文件夹保存（想给 AI 用就选 AI 空间目录）">${DELIVER_ICON.space}</button>`
+      : "";
+    return `<div class="tray-row">` +
+      `<span class="tray-icon">${DELIVER_ICON.image}</span>` +
+      `<span class="tray-name" title="${escapeHtml(prompt)}">${escapeHtml(name)}</span>` +
+      `<span class="tray-size" data-image-size="${imageShotToken(messageIndex, imageIndex)}">${escapeHtml(meta)}</span>` +
+      `<span class="tray-actions">` +
+        `<a class="deliver-icon-btn" href="${escapeHtml(src)}" target="_blank" rel="noopener" title="在新标签页看原图">${DELIVER_ICON.open}</a>` +
+        `<button type="button" class="deliver-icon-btn" data-image-action="download" data-image-url="${escapeHtml(src)}" data-image-name="${escapeHtml(name)}" title="选择文件夹，保存到本机">${DELIVER_ICON.download}</button>` +
+        spaceBtn +
+      `</span></div>`;
+  }).join("");
+
+  const codeRows = codeParts.map((part) => {
+    const label = part.name || (part.lang ? `${part.lang} 代码` : "代码片段");
+    const lines = part.content.trim() ? part.content.trim().split("\n").length : 0;
+    // 代码内容在这里登记（气泡里的 pre 不存副本）：卡牌上的保存按钮按同一个 token 取
+    codeFileStore.set(part.token, { name: part.name, lang: part.lang, content: part.content });
+    return `<div class="tray-row">` +
+      `<span class="tray-icon">${DELIVER_ICON.code}</span>` +
+      `<span class="tray-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>` +
+      `<span class="tray-size">${escapeHtml(`${part.lang || "代码"} · ${lines} 行`)}</span>` +
+      `<span class="tray-actions">` +
+        `<button type="button" class="deliver-icon-btn" data-code-action="download" data-code-id="${part.token}" title="选择文件夹，保存到本机">${DELIVER_ICON.download}</button>` +
+        `<button type="button" class="deliver-icon-btn" data-code-action="space" data-code-id="${part.token}" title="选择文件夹保存（想给 AI 用就选 AI 空间目录）">${DELIVER_ICON.space}</button>` +
+      `</span></div>`;
+  }).join("");
+
+  const fileRows = files.map((file) => {
+    const name = String(file.name || file.path || "文件");
+    const path = String(file.path || name);
+    const size = Number(file.size) || 0;
+    const openHref = `/api/space/raw?path=${encodeURIComponent(path)}`;
+    return `<div class="tray-row">` +
+      `<span class="tray-icon">${fileTypeIcon(name)}</span>` +
+      `<span class="tray-name" title="${escapeHtml(path)}">${escapeHtml(name)}</span>` +
+      `<span class="tray-size">${size ? formatBytes(size) : "已写进空间"}</span>` +
+      `<span class="tray-actions">` +
+        `<a class="deliver-icon-btn" href="${openHref}" target="_blank" rel="noopener" title="在浏览器里打开">${DELIVER_ICON.open}</a>` +
+        `<button type="button" class="deliver-icon-btn" data-space-action="save" data-space-path="${escapeHtml(path)}" data-space-name="${escapeHtml(name)}" title="选择文件夹，保存到本机">${DELIVER_ICON.download}</button>` +
+      `</span></div>`;
+  }).join("");
+
+  // 顺序固定：图片 → 代码块 → 空间文件（气泡内也是「先正文（含代码）、后图片」）
+  const rows = imageRows + codeRows + fileRows;
+  return rows ? `<div class="deliver-tray">${rows}</div>` : "";
+}
+
+/* AI 正文：文字照常显示，```代码块``` 只把代码本体平铺出来（无边框卡片、无按钮）；
+   保存到本机（弹文件夹选择器）的操作统一在气泡外的小卡牌上（assistantDeliverTrayMarkup）。
+   → 这是「交付格式规范」的核心约定，新增交付类型前先看 web/DELIVERY-FORMAT.md。 */
+function assistantContentMarkup(item, messageIndex) {
+  let html = "";
+  const content = displayAnswer(item.content);   // 首尾空白会导致气泡顶部/底部多出空行
+  // 正在打字时文字用 .streaming-text 包住，后面重渲染时不会把已有文字再显示一遍
+  const textClass = item.streaming ? "streaming-text" : "message-text";
+  if (item.streaming) {
+    /* 流式期间先不切代码块：整段文字放进唯一的 .streaming-text
+       （renderStreamingAnswer 每次只更新这一个 span，切了就会多处正文重复）；
+       打字结束、item.streaming 消失后的下一次渲染再切成代码块。 */
+    if (content) html += `<span class="${textClass}">${escapeHtml(content)}</span>`;
+  } else {
+    messageParts(content, messageIndex).forEach((part) => {
+      if (part.type === "text") {
+        if (part.text) html += `<span class="${textClass}">${escapeHtml(part.text)}</span>`;
+        return;
+      }
+      html += `<pre class="code-block"><code>${escapeHtml(part.content)}</code></pre>`;
+    });
+  }
+  html += assistantImagesMarkup(item, messageIndex);
+  if (item.streaming) html += '<span class="cursor-block"></span>';
+  return html;
+}
+
+function codeFileDownloadName(entry) {
+  const ext = CODE_LANG_EXT[entry.lang] || "txt";
+  if (!entry.name) return `代码片段.${ext}`;
+  return /\.[A-Za-z0-9]{1,8}$/.test(entry.name) ? entry.name : `${entry.name}.${ext}`;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ★ 保存到本机（交付小卡牌上所有「下载 / 存到空间」按钮的唯一出口）
+   ──────────────────────────────────────────────────────────────
+   点一下就弹出「选择文件夹」对话框，直接写进你选的那个文件夹，
+   不用再去 /space 页粘贴路径绑定；
+   浏览器不支持 File System Access（Firefox / Safari 等）时退回默认下载位置。
+   ⚠ pickSaveFolder 必须在点击手势里最先调用：fetch 之后再弹窗，
+     浏览器会认为「不是用户点的」而拒绝打开。
+   ══════════════════════════════════════════════════════════════ */
+const SAVE_FOLDER_ID = "mogao-save-folder";   // 让浏览器记住上次选的保存位置
+let lastSaveDirHandle = null;                 // 下次用 startIn 从上次的位置打开
+
+/* 返回目录句柄；用户点取消 → "cancelled"，浏览器不支持 → "unsupported"，其它错误 → null */
+async function pickSaveFolder() {
+  if (typeof window.showDirectoryPicker !== "function") return "unsupported";
+  const options = { id: SAVE_FOLDER_ID, mode: "readwrite" };
+  if (lastSaveDirHandle) options.startIn = lastSaveDirHandle;   // 默认从上次的位置打开
+  try {
+    const handle = await window.showDirectoryPicker(options);
+    lastSaveDirHandle = handle;
+    return handle;
+  } catch (error) {
+    if (error && error.name === "AbortError") return "cancelled";   // 用户点了取消
+    if (lastSaveDirHandle) {
+      /* 记着的旧句柄可能已失效（文件夹被删/改名）：去掉起始位置再试一次 */
+      try {
+        const handle = await window.showDirectoryPicker({ id: SAVE_FOLDER_ID, mode: "readwrite" });
+        lastSaveDirHandle = handle;
+        return handle;
+      } catch (retryError) {
+        if (retryError && retryError.name === "AbortError") return "cancelled";
+      }
+    }
+    console.warn("选择保存文件夹失败", error);
+    return null;
+  }
+}
+
+/* 不支持文件夹选择器时的兜底：走浏览器自己的下载 */
+function browserDownloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name || "download";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function writeBlobIntoFolder(folder, blob, name) {
+  try {
+    const fileHandle = await folder.getFileHandle(name, { create: true });
+    const writable = await fileHandle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    window.themeHint?.(`已保存到「${folder.name}」· ${name}`);
+    return true;
+  } catch (error) {
+    console.warn("写入所选文件夹失败", error);
+    window.themeHint?.(`写入失败：${error.message}`);
+    return false;
+  }
+}
+
+/* 返回 "saved"（存进所选文件夹）/ "downloaded"（退回默认下载）/ "cancelled" / "failed" */
+async function saveBlobToPickedFolder(blob, name) {
+  const folder = await pickSaveFolder();
+  if (folder === "cancelled") return "cancelled";
+  if (folder === "unsupported" || folder === null) {
+    browserDownloadBlob(blob, name);
+    window.themeHint?.("这个浏览器不支持选择文件夹，已改存到默认下载位置");
+    return "downloaded";
+  }
+  return (await writeBlobIntoFolder(folder, blob, name)) ? "saved" : "failed";
+}
+
+/* 代码块等纯文本：内容已经在手，直接包成 blob 存 */
+async function saveTextToPickedFolder(name, text) {
+  return saveBlobToPickedFolder(new Blob([text], { type: "text/plain;charset=utf-8" }), name || "download.txt");
+}
+
+/* 外链图片：先弹文件夹（必须在点击手势里），再抓成 blob 写进去；图床挡跨域就退回打开原图 */
+async function saveRemoteImageToPickedFolder(src, name) {
+  const folder = await pickSaveFolder();
+  if (folder === "cancelled") return "cancelled";
+  try {
+    const response = await fetch(src, { mode: "cors" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    if (folder === "unsupported" || folder === null) {
+      browserDownloadBlob(blob, name || "AI图片.png");
+      window.themeHint?.("这个浏览器不支持选择文件夹，已改存到默认下载位置");
+      return "downloaded";
+    }
+    return (await writeBlobIntoFolder(folder, blob, name || "AI图片.png")) ? "saved" : "failed";
+  } catch (error) {
+    window.open(src, "_blank", "noopener");
+    window.themeHint?.("这个图床不允许直接下载，已在新标签打开原图，右键可以另存为");
+    return "failed";
+  }
+}
+
+/* 空间里的文件（AI 写进去的）：先弹文件夹，再从服务端抓内容写进去 */
+async function saveSpaceFileToPickedFolder(path, name) {
+  const folder = await pickSaveFolder();
+  if (folder === "cancelled") return "cancelled";
+  try {
+    const response = await fetch(`/api/space/raw?path=${encodeURIComponent(path)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    if (folder === "unsupported" || folder === null) {
+      browserDownloadBlob(blob, name || "download");
+      window.themeHint?.("这个浏览器不支持选择文件夹，已改存到默认下载位置");
+      return "downloaded";
+    }
+    return (await writeBlobIntoFolder(folder, blob, name || "download")) ? "saved" : "failed";
+  } catch (error) {
+    window.themeHint?.(`下载失败：${error.message}`);
+    return "failed";
+  }
+}
+
+/* 保存成功后给按钮换成对勾（鼠标悬停能看到状态） */
+function markDeliverButtonDone(button, title) {
+  button.innerHTML = DELIVER_ICON.check;
+  button.classList.add("is-done");
+  button.title = title || "已保存";
+}
+
+/* ══════════════════════════════════════════════════════════════
+   「所有存储库」按钮（输入框工具栏）：点一下直接弹「选择文件夹」，
+   把选中的文件夹定为默认保存 / 存储位置 —— 按钮上显示名字，句柄存进
+   IndexedDB（下次打开页面还在），以后保存文件时选择器默认从这里开始。
+   （浏览器拿不到文件夹的绝对路径，所以「记住」靠的是文件句柄。）
+   ══════════════════════════════════════════════════════════════ */
+const REPO_DB_NAME = "mogao-repo";
+const REPO_DB_STORE = "handles";
+const REPO_HANDLE_KEY = "repo-dir";
+const REPO_NAME_KEY = "mogao-repo-name";
+
+function openRepoDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(REPO_DB_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(REPO_DB_STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function idbPutRepoHandle(handle) {
+  const db = await openRepoDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(REPO_DB_STORE, "readwrite");
+    tx.objectStore(REPO_DB_STORE).put(handle, REPO_HANDLE_KEY);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+async function idbGetRepoHandle() {
+  const db = await openRepoDb();
+  const handle = await new Promise((resolve, reject) => {
+    const request = db.transaction(REPO_DB_STORE, "readonly").objectStore(REPO_DB_STORE).get(REPO_HANDLE_KEY);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error);
+  });
+  db.close();
+  return handle;
+}
+
+function updateRepoLabel(name) {
+  const label = $("#repoName");
+  const button = $("#repoButton");
+  if (label) label.textContent = name ? `· ${name}` : "";
+  if (button) button.title = name ? `默认保存位置：${name}（点击更换）` : "选择要保存到本机的文件夹（默认保存位置）";
+}
+
+async function setupRepoButton() {
+  const button = $("#repoButton");
+  if (!button) return;
+  const storedName = localStorage.getItem(REPO_NAME_KEY) || "";
+  if (storedName) updateRepoLabel(storedName);
+  try {
+    const handle = await idbGetRepoHandle();
+    if (handle) {
+      lastSaveDirHandle = handle;   // 供保存选择器当起始位置
+      if (!storedName) updateRepoLabel(handle.name);
+    }
+  } catch (error) {
+    console.warn("读取默认保存位置失败", error);
+  }
+  button.addEventListener("click", async () => {
+    const folder = await pickSaveFolder();   // 直接弹「选择文件夹」
+    if (folder === "cancelled") return;
+    if (folder === "unsupported" || folder === null) {
+      window.themeHint?.("这个浏览器不支持选择文件夹（建议用 Chrome / Edge），唔~");
+      return;
+    }
+    updateRepoLabel(folder.name);
+    localStorage.setItem(REPO_NAME_KEY, folder.name);
+    try { await idbPutRepoHandle(folder); } catch (error) { console.warn("记住默认保存位置失败", error); }
+    window.themeHint?.(`已把「${folder.name}」定为默认保存位置，保存文件时会从这里开始，唔~`);
+  });
+}
+
+/* 小卡牌上的按钮（事件委托，渲染后重新绑也能用）
+   —— 代码块 / 图片 / 空间文件的保存按钮都走「弹文件夹 → 写进去」这条链路 */
+messagesEl.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-code-action]");
+  if (!button) return;
+  const entry = codeFileStore.get(button.dataset.codeId);
+  if (!entry) return;
+  button.disabled = true;
+  const result = await saveTextToPickedFolder(codeFileDownloadName(entry), entry.content);
+  button.disabled = false;
+  if (result === "saved" || result === "downloaded") markDeliverButtonDone(button);
+});
+
+/* 小卡牌上的图片按钮：两个按钮现在都是「弹文件夹 → 存到本机」 */
+messagesEl.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-image-action]");
+  if (!button) return;
+  button.disabled = true;
+  const result = await saveRemoteImageToPickedFolder(button.dataset.imageUrl, button.dataset.imageName);
+  button.disabled = false;
+  if (result === "saved" || result === "downloaded") markDeliverButtonDone(button);
+});
+
+/* 空间文件行：弹文件夹 → 从服务端抓内容写进所选文件夹 */
+messagesEl.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-space-action]");
+  if (!button) return;
+  button.disabled = true;
+  const result = await saveSpaceFileToPickedFolder(button.dataset.spacePath, button.dataset.spaceName);
+  button.disabled = false;
+  if (result === "saved" || result === "downloaded") markDeliverButtonDone(button);
+});
+
+/* 交付图片的加载状态：
+   · load  → 图片容器加 .is-ready（淡入），拿不到文件大小的外链图顺便补成「宽 × 高」（写进气泡外卡牌的那一行）
+   · error → 容器加 .is-broken，用一句提示代替破图（外链过期 / 图床挡外链） */
+messagesEl.addEventListener("load", (event) => {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement)) return;
+  const shot = image.closest(".deliver-image");
+  if (!shot) return;
+  shot.classList.add("is-ready");
+  const token = shot.dataset.shot;
+  const sizeEl = token ? shot.closest(".message")?.querySelector(`[data-image-size="${token}"]`) : null;
+  if (sizeEl && !sizeEl.textContent.trim() && image.naturalWidth) {
+    sizeEl.textContent = `${image.naturalWidth} × ${image.naturalHeight}`;
+  }
+}, true);
+
+messagesEl.addEventListener("error", (event) => {
+  const image = event.target;
+  if (image instanceof HTMLImageElement) image.closest(".deliver-image")?.classList.add("is-broken");
+}, true);
+
+/* 整页接收拖拽：拖到哪都算（输入框区域也会给出提示层） */
+function setupAttachmentDrop() {
+  const main = $(".main");
+  const attachInput = $("#attachInput");
+  $("#attachButton")?.addEventListener("click", () => attachInput?.click());
+  attachInput?.addEventListener("change", () => {
+    addFilesToAttachments(attachInput.files);
+    attachInput.value = "";
+  });
+
+  const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes("Files");
+  document.addEventListener("dragover", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    main?.classList.add("drop-active");
+  });
+  document.addEventListener("dragleave", (event) => {
+    if (event.relatedTarget) return;   // 还在页面里移动，不收起提示
+    main?.classList.remove("drop-active");
+  });
+  document.addEventListener("drop", (event) => {
+    if (!hasFiles(event)) return;
+    event.preventDefault();
+    main?.classList.remove("drop-active");
+    addFilesToAttachments(event.dataTransfer.files);
+  });
+  /* 截图 / 图片可以直接 Ctrl+V 粘进输入框 */
+  document.addEventListener("paste", (event) => {
+    const files = Array.from(event.clipboardData?.files || []);
+    if (!files.length) return;
+    event.preventDefault();
+    addFilesToAttachments(files);
+  });
+}
+
+/* 空间页（/space）「发送到对话」留下的文件，回到聊天页时挂成附件 */
+function consumeSpacePayload() {
+  let payload = null;
+  try {
+    payload = JSON.parse(localStorage.getItem("mogao-space-payload") || "null");
+  } catch (error) {
+    payload = null;
+  }
+  if (!payload) return;
+  localStorage.removeItem("mogao-space-payload");
+  const isImage = payload.kind === "image";
+  pendingAttachments.push({
+    id: `att-space-${++attachmentSeq}`,
+    name: payload.name || "来自空间的文件",
+    size: payload.size || 0,
+    kind: isImage ? "image" : "text",
+    text: isImage ? "" : String(payload.text || "").slice(0, ATTACH_TEXT_LIMIT),
+    preview: isImage ? String(payload.dataUrl || "") : "",
+  });
+  renderPendingAttachments();
+  inputEl.focus();
+  $("#typingState").textContent = `已带上《${payload.name}》，写点什么再发送`;
+}
+
+/* ========== 「问」：随机日常问题（点一条填进输入框，不会自动发送） ========== */
+/* 想加自己的问题：往这个数组里继续写字符串就行，每次点开随机抽 6 条 */
+const ASK_QUESTIONS = [
+  "今天晚饭吃什么好？给三个省事的选项",
+  "帮我想一句发朋友圈的文案，别太矫情",
+  "最近总失眠，有什么温和的助眠办法？",
+  "周末一个人在家，可以做点什么有意思的事？",
+  "帮我列一份本周的买菜清单",
+  "想学做一道简单的家常菜，推荐哪个？",
+  "怎么把房间收拾得更清爽？给几个小技巧",
+  "帮我正经地写一条请假理由",
+  "最近总是犯困，什么原因？要怎么调整",
+  "送朋友生日礼物，预算 200 以内，有什么推荐？",
+  "帮我给小猫取 5 个可爱的名字",
+  "怎么才能早起不痛苦？",
+  "帮我写一段安慰失恋朋友的话",
+  "电脑越用越卡，有什么不花钱的提速办法？",
+  "想减肥又管不住嘴，给点实际建议",
+  "帮我写一句适合发在群里的邀请通知",
+  "推荐几部适合下雨天看的电影",
+  "怎么跟人道歉才显得真诚？",
+  "帮我安排一条不太累的一日游路线",
+  "手机内存总是不够，怎么清理比较靠谱？",
+  "帮我想几个不加班也能提升自己的小习惯",
+  "心情不好，讲个冷笑话让我开心一下",
+  "帮我写一份简单的月度开销记录模板",
+  "第一次去健身房应该注意什么？",
+  "怎么礼貌地拒绝别人的请求？",
+  "帮我给这段话润色一下，让它更通顺",
+  "通勤路上有什么适合听的东西推荐？",
+  "家里养绿萝总养不活，问题出在哪？",
+];
+
+function pickAskQuestions(count) {
+  const pool = ASK_QUESTIONS.slice();
+  const picked = [];
+  while (pool.length && picked.length < count) {
+    picked.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  }
+  return picked;
+}
+
+function closeAskMenu() {
+  const menu = $("#askMenu");
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  $("#askButton")?.classList.remove("is-open");
+  $("#askButton")?.setAttribute("aria-expanded", "false");
+}
+
+function openAskMenu() {
+  const menu = $("#askMenu");
+  if (!menu) return;
+  menu.innerHTML = '<p class="ask-menu-title">随机挑几个日常问题 · 点一条填进输入框</p>'
+    + pickAskQuestions(6).map((question) => `<button type="button" role="menuitem" data-ask="${escapeHtml(question)}">${escapeHtml(question)}</button>`).join("");
+  menu.hidden = false;
+  $("#askButton")?.classList.add("is-open");
+  $("#askButton")?.setAttribute("aria-expanded", "true");
+}
+
+/* 选中后只填进输入框（不自动发送），光标放到末尾，用户可以先改再发 */
+function insertAskQuestion(question) {
+  inputEl.value = question;
+  inputEl.dispatchEvent(new Event("input"));   // 交给已有的 input 监听去自动撑高输入框
+  inputEl.focus();
+  inputEl.setSelectionRange(question.length, question.length);
+  closeAskMenu();
+  $("#typingState").textContent = "问题已填好，确认无误再点发送";
+}
+
+function setupAskMenu() {
+  const button = $("#askButton");
+  const menu = $("#askMenu");
+  if (!button || !menu) return;
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (menu.hidden) openAskMenu(); else closeAskMenu();
+  });
+  menu.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-ask]");
+    if (item) insertAskQuestion(item.dataset.ask);
+  });
+  document.addEventListener("click", (event) => {
+    if (menu.hidden) return;
+    if (event.target.closest("#askMenu") || event.target.closest("#askButton")) return;
+    closeAskMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAskMenu();
+  });
+}
+
+/* ========== 历史存档（过去 7 天） ==========
+   传进来的 conversation 只要有 { historyId, sessionId, messages, summary } 就能存：
+     · 当前会话 → persistCurrentConversation（用 state 拼一个）
+     · 后台还在生成的会话 → 直接传它自己的流上下文（回答生成完写回它自己的存档） */
+async function persistConversation(conversation) {
+  // 只有附件的消息（没写字）也算有效内容，不能被过滤掉
+  const clean = conversation.messages.filter((item) => String(item.content || "").trim() || (item.attachments || []).length);
+  if (!clean.length) return null;
+  const first = clean.find((item) => item.role === "user") || clean[0];
+  const payload = {
+    id: conversation.historyId || undefined,
+    session_id: conversation.sessionId,
+    title: String(first.content || first.attachments?.[0]?.name || "附件消息").trim().replace(/\s+/g, " ").slice(0, 28),
+    messages: conversation.messages,
+    summary: conversation.summary,
+  };
+  try {
+    const response = await fetch("/api/history/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!data.ok || !data.item) return null;
+    conversation.historyId = data.item.id;
+    /* 保存期间用户可能已经切到别的会话：只更新「正在看的这段」的界面状态，
+       另一段会话的 historyId 已经写回它自己的上下文里，不会丢 */
+    if (conversation.sessionId === state.sessionId) {
+      state.historyId = data.item.id;
+      syncNavSelection();
+      $("#savedConversationMeta").textContent = "刚刚保存";
+    }
+    window.historyListPointer?.refresh?.();
+    return data.item;
+  } catch (error) {
+    console.warn("历史记录保存失败", error);
+    return null;
+  }
+}
+
+function persistCurrentConversation() {
+  const conversation = {
+    historyId: state.historyId,
+    sessionId: state.sessionId,
+    messages: state.messages,
+    summary: state.summary,
+  };
+  return persistConversation(conversation).then((item) => {
+    /* ⚠ 保存期间可能已经切到别的会话：晚到的响应不能污染新会话的 historyId，
+       否则下一次保存会带着旧 id 把两条存档互相顶替（实测踩过）。 */
+    if (item && conversation.sessionId === state.sessionId) state.historyId = item.id;
+    return item;
+  });
+}
+
+async function restoreConversation(item) {
+  const targetSessionId = item.session_id || item.id;
+  const live = activeChatStreams.get(targetSessionId);   // 这段会话还在生成？直接用内存里那份
+  if (!live) {
+    try {
+      await fetch("/api/session/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: targetSessionId, messages: item.messages || [], summary: item.summary || "" }),
+      });
+    } catch (error) {
+      console.warn("服务端会话恢复失败", error);
+    }
+  }
+  state.sessionId = targetSessionId;
+  state.historyId = item.id || live?.historyId || state.historyId;
+  state.messages = live
+    ? live.messages
+    : (Array.isArray(item.messages)
+      ? item.messages.filter((message) => String(message.content || "").trim() || (message.files || []).length || (message.images || []).length)
+      : []);
+  state.summary = live ? live.summary : (item.summary || "");
+  state.thinking = live ? live.thinking : [];
+  state.thinkingVisible = live ? live.thinking.length > 0 : false;
+  state.thinkingCollapsed = live ? live.thinking.length > 3 : false;
+  state.thinkingDone = false;
+  state.requestError = "";
+  saveState();
+  renderMessages({ bottom: true });
+  syncComposer();
+  $("#savedConversationMeta").textContent = "已恢复历史对话";
+  if (live) $("#typingState").textContent = "思考中...";
+  else $("#typingState").textContent = "已恢复";
+  window.historyListPointer?.refresh?.();
+  if (!live) syncSessionFromServer();   // 看服务端有没有「离开时生成完、但没显示」的回答，有就补上
+}
+
+/* ========== 新聊天 ==========
+   ★ 正在生成的回答不用等：它会在后台自己跑完、写回旧会话的存档，
+     这里只把「正在看的这段」换成新会话；后台流不锁输入框。 */
+function startNewConversation() {
+  persistCurrentConversation();
+  state.sessionId = uid();
+  state.historyId = null;
+  state.messages = [];
+  state.summary = "";
+  state.thinking = [];
+  state.thinkingVisible = false;
+  state.thinkingCollapsed = false;
+  state.thinkingDone = false;
+  state.requestError = "";
+  saveState();
+  renderMessages({ bottom: true });
+  syncComposer();
+  $("#savedConversationMeta").textContent = "刚刚新建";
+  const background = activeChatStreams.size;   // 还开着几段后台流
+  $("#typingState").textContent = background ? `新对话就绪（有 ${background} 段回答在后台继续生成）` : "新对话就绪";
+  window.historyListPointer?.refresh?.();
+  inputEl.focus();
+}
+
+/* ========== 右键删除会话（只在左侧栏） ==========
+   侧栏「会话」列表里右键某一条 → 小菜单「删除这条会话」（贴鼠标位置弹出）；
+   删的就是正在聊的那条时，会同时清空聊天区。
+   两段式确认：第一次点变「再点一次确认删除」，第二次才真删（没有撤销，留一步缓冲）。
+   ★ 按用户要求，聊天区右键不再提供删除入口（删除只在左侧栏）。 */
+let sessionMenuEl = null;
+let sessionMenuTarget = null;
+let sessionMenuArmed = false;
+
+function sessionMenuButton() {
+  return sessionMenuEl?.querySelector("[data-session-action]") || null;
+}
+
+function buildSessionMenu() {
+  if (sessionMenuEl) return sessionMenuEl;
+  const menu = document.createElement("div");
+  menu.className = "session-menu";
+  menu.hidden = true;
+  menu.innerHTML = '<div class="session-menu-title"></div><button type="button" class="session-menu-item danger" data-session-action="delete"></button>';
+  menu.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-session-action]");
+    if (!button) return;
+    if (!sessionMenuArmed) {            // 第一次点：进入待确认状态
+      sessionMenuArmed = true;
+      menu.classList.add("is-armed");
+      button.textContent = "再点一次确认删除";
+      return;
+    }
+    const target = sessionMenuTarget;
+    closeSessionMenu();
+    deleteConversation(target);
+  });
+  document.body.appendChild(menu);
+  sessionMenuEl = menu;
+  return menu;
+}
+
+function openSessionMenu(event, target) {
+  const menu = buildSessionMenu();
+  sessionMenuTarget = target;
+  sessionMenuArmed = false;
+  menu.classList.remove("is-armed");
+  menu.querySelector(".session-menu-title").textContent = `会话 · ${target.title || "未命名对话"}`;
+  sessionMenuButton().textContent = "删除这条会话";
+  menu.hidden = false;
+  // 贴着鼠标放，贴近视口边缘时往回收一点
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8))}px`;
+}
+
+function closeSessionMenu() {
+  if (sessionMenuEl) sessionMenuEl.hidden = true;
+  sessionMenuEl?.classList.remove("is-armed");
+  sessionMenuTarget = null;
+  sessionMenuArmed = false;
+}
+
+/* 清空聊天区（删掉正在聊的那条会话时用）：开一段新对话，不把旧内容写回存档 */
+function resetConversationState() {
+  cancelChatStream(state.sessionId);   // 正在生成的回答一并掐掉，避免回头又写回一条存档
+  state.sessionId = uid();
+  state.historyId = null;
+  state.messages = [];
+  state.summary = "";
+  state.thinking = [];
+  state.thinkingVisible = false;
+  state.thinkingCollapsed = false;
+  state.thinkingDone = false;
+  state.requestError = "";
+  state.lastUsage = null;
+  saveState();
+  renderMessages({ bottom: true });
+  syncComposer();
+  $("#savedConversationMeta").textContent = "会话已删除";
+  $("#typingState").textContent = "已删除，可以重新开始";
+}
+
+/* 真删：先删服务端存档（后端顺带清掉内存会话），删的是当前会话就重置聊天区 */
+async function deleteConversation(target) {
+  if (!target) return;
+  const isCurrent = target.kind === "current"
+    || !!(target.item && (target.item.id === state.historyId || (target.item.session_id && target.item.session_id === state.sessionId)));
+  const payload = isCurrent
+    ? { id: state.historyId || "", session_id: state.sessionId }
+    : { id: target.item?.id || "", session_id: target.item?.session_id || "" };
+  try {
+    const response = await fetch("/api/history/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!data.ok) throw new Error(data.error || "删除失败");
+  } catch (error) {
+    window.themeHint?.(`删除失败：${error.message}`);
+    return;
+  }
+  /* 这段会话如果还在生成：把后台流一并掐掉，别让它回头又写一条存档回来 */
+  cancelChatStream(payload.session_id);
+  if (isCurrent) resetConversationState();
+  window.themeHint?.(isCurrent ? "已删除当前会话，唔~" : "会话已删除");
+  window.historyListPointer?.refresh?.();
+}
+
+function setupSessionMenu() {
+  /* 侧栏「会话」列表：右键某一条 → 删那一条（名字用列表里显示的那个）。
+     ★ 聊天区不再弹删除菜单（用户要求：删除只在左侧栏）。 */
+  $("#savedConversation")?.addEventListener("contextmenu", (event) => {
+    const button = event.target.closest("[data-history-id]");
+    if (!button) return;
+    event.preventDefault();
+    openSessionMenu(event, {
+      kind: "history",
+      title: button.querySelector(".h-title")?.textContent || "",
+      item: { id: button.dataset.historyId || "", session_id: button.dataset.historySession || "" },
+    });
+  });
+  /* 点别处 / 按 Esc / 滚动消息流都收起菜单 */
+  document.addEventListener("pointerdown", (event) => {
+    if (sessionMenuEl && !sessionMenuEl.hidden && !sessionMenuEl.contains(event.target)) closeSessionMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeSessionMenu();
+  });
+  messagesEl.addEventListener("scroll", closeSessionMenu);
+  window.addEventListener("resize", closeSessionMenu);
+}
+
+/* ========== 上下文控制器 ========== */
+function toggleController(forceCollapsed) {
+  const collapsed = typeof forceCollapsed === "boolean" ? forceCollapsed : !controller.classList.contains("collapsed");
+  controller.classList.toggle("collapsed", collapsed);
+  $("#toggleController").textContent = collapsed ? "+" : "−";
+  $("#navController").setAttribute("aria-expanded", String(!collapsed));
+  if (!collapsed) controller.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+async function compressContext() {
+  if (foregroundStream()) {   // 正在生成时压缩会把这条回答弄丢，先拦住
+    $("#compressionNote").textContent = "当前回答还在生成，等它说完再压缩，唔~";
+    return;
+  }
+  const keepRecent = Number($("#keepRecent").value);
+  $("#compressionNote").textContent = "正在整理较早的对话...";
+  try {
+    const response = await fetch("/api/context/compress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: state.sessionId, messages: state.messages, keep_recent: keepRecent }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "压缩失败");
+    state.messages = data.messages || state.messages;
+    state.summary = data.summary || "";
+    saveState();
+    renderMessages();
+    $("#compressionNote").textContent = state.summary
+      ? "较早内容已整理为摘要，最近对话保持原样。"
+      : "消息还不多，暂时无需压缩。";
+  } catch (error) {
+    $("#compressionNote").textContent = error.message;
+  }
+}
+
+let clearArmed = false;
+let clearTimer = null;
+
+function resetClearButton() {
+  clearArmed = false;
+  clearTimeout(clearTimer);
+  const button = $("#clearContextButton");
+  button.textContent = "✕ 清空当前上下文";
+  button.classList.remove("is-armed");
+}
+
+async function clearContext() {
+  cancelChatStream(state.sessionId);   // 正在生成的回答一并停掉，避免清完了又冒出来
+  try {
+    await fetch("/api/session/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: state.sessionId }),
+    });
+  } catch (error) {
+    console.warn("服务端上下文重置失败", error);
+  }
+  state.messages = [];
+  state.summary = "";
+  state.thinking = [];
+  state.thinkingVisible = false;
+  state.thinkingDone = false;
+  saveState();
+  renderMessages({ bottom: true });
+  syncComposer();
+  $("#compressionNote").textContent = "上下文已清空，可以重新开始提问。";
+  $("#savedConversationMeta").textContent = "上下文已清空";
+}
+
+/* ========== 思考强度（真实调节 thinking / reasoning_effort / max_tokens / temperature） ========== */
+function effortLevels() {
+  return state.effortLevels.length ? state.effortLevels : FALLBACK_EFFORT_LEVELS;
+}
+
+function currentEffort() {
+  const levels = effortLevels();
+  return levels.find((item) => item.level === state.effortLevel) || levels[levels.length - 1];
+}
+
+/* 展示上一次回答的真实 token 消耗，档位越高越费 token 能直接看出来 */
+function renderMindUsage() {
+  const target = $("#mindUsage");
+  if (!target) return;
+  const effort = currentEffort();
+  if (state.lastUsage?.total_tokens) {
+    const label = state.lastEffort?.label || effort.label;
+    const think = state.lastUsage.reasoning_tokens
+      ? `其中思考 ${state.lastUsage.reasoning_tokens}`
+      : "未开启思考";
+    target.textContent = `上次消耗 ${state.lastUsage.total_tokens} tokens（${think}）· ${label}档，本档上限 ${effort.max_tokens} tokens。`;
+    return;
+  }
+  target.textContent = `${effort.note || "档位越高思维链越长，消耗的 token 与费用越多。"}（本档上限 ${effort.max_tokens} tokens）`;
+}
+
+/* 每个档位节点都带一张小缩略图，点它可直接跳到该档位 */
+function renderMindNodes() {
+  const holder = $("#mindNodes");
+  if (!holder) return;
+  holder.innerHTML = effortLevels().map((item) => {
+    const bg = MIND_BG_IMAGES[item.level] || "";
+    return `
+    <button class="mind-node ${item.level === state.effortLevel ? "is-active" : ""}" type="button" data-level="${item.level}"
+            title="档位 ${item.level} · ${escapeHtml(item.label)}｜背景 ${escapeHtml(bg)}"
+            style="--node-thumb:url('${escapeHtml(bg)}')">
+      <span class="mind-node-dot"></span>
+      <span class="mind-node-label">${escapeHtml(item.label)}</span>
+    </button>`;
+  }).join("");
+  holder.querySelectorAll("[data-level]").forEach((button) => {
+    button.addEventListener("click", () => setEffortLevel(button.dataset.level));
+  });
+}
+
+/* 背景是否跟着档位换：开关关掉就完全不碰背景层 */
+function applyMindBackground(fade) {
+  const layer = $("#chatBg");
+  if (!layer) return;
+  const src = MIND_BG_IMAGES[state.effortLevel] || "";
+  const visible = Boolean(state.bgFollow && src);
+  // 面板（气泡/输入框）据此切成半透明，详见 app.css 的 body.has-chat-bg
+  document.body.classList.toggle("has-chat-bg", visible);
+  if (!visible) {
+    layer.classList.remove("show");
+    layer.dataset.src = "";
+    return;
+  }
+  if (layer.dataset.src === src) {
+    layer.classList.add("show");
+    return;
+  }
+  const show = () => {
+    layer.style.backgroundImage = `url("${src}")`;
+    layer.dataset.src = src;
+    layer.classList.add("show");
+  };
+  if (!fade) { show(); return; }
+  layer.classList.remove("show");   // 先淡出再换图，切档位时不会硬闪
+  setTimeout(show, 170);
+}
+
+function renderMindUI(fade) {
+  const effort = currentEffort();
+  const range = $("#mindRange");
+  if (!range) return;
+  const total = effortLevels().length;
+  const detail = effort.thinking
+    ? `思考开启 · reasoning_effort=${effort.effort} · temperature ${effort.temperature} · 上限 ${effort.max_tokens} tokens`
+    : `思考关闭 · temperature ${effort.temperature} · 上限 ${effort.max_tokens} tokens`;
+  // 工具栏里只保留一条可拖动的条，档位细节挂在 title / aria 与设置弹窗里
+  range.max = String(total);
+  range.value = String(effort.level);
+  range.title = `思考强度 ${effort.level}/${total} · ${effort.label}（${detail}）`;
+  range.setAttribute("aria-valuetext", `${effort.label}：${detail}`);
+  const info = $("#mindSettingState");
+  if (info) info.textContent = `当前：${effort.label}（${effort.level}/${total}）· ${detail}`;
+  const toggle = $("#mindBgToggle");
+  if (toggle) toggle.checked = state.bgFollow;
+  renderMindNodes();
+  renderMindUsage();
+  applyMindBackground(fade);
+}
+
+function setEffortLevel(level) {
+  const max = effortLevels().length;
+  const next = Math.max(1, Math.min(Number(level) || state.effortLevel, max));
+  // 拖动时 input 事件会连续触发，档位没变就不重新渲染（避免无谓的重绘与背景闪动）
+  if (next === state.effortLevel) return;
+  state.effortLevel = next;
+  localStorage.setItem(EFFORT_LEVEL_KEY, String(state.effortLevel));
+  renderMindUI(true);
+}
+
+/* ========== 事件绑定 ========== */
+formEl.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const message = inputEl.value.trim();
+  if (sendButton.disabled) return;
+  // 只发附件（不写字）也可以
+  if (!message && !pendingAttachments.length) return;
+  const attachments = pendingAttachments;
+  pendingAttachments = [];
+  inputEl.value = "";
+  inputEl.style.height = "auto";
+  renderPendingAttachments();
+  sendMessage(message, attachments);
+});
+
+inputEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    formEl.requestSubmit();
+  }
+});
+
+inputEl.addEventListener("input", () => {
+  inputEl.style.height = "auto";
+  inputEl.style.height = `${Math.min(inputEl.scrollHeight, 180)}px`;
+});
+
+modelSelect.addEventListener("change", () => {
+  state.model = modelSelect.value;
+  saveState();
+  $("#activeModel").textContent = state.model;
+  applyModelSelectTint();   // 切到 DeepSeek 时下拉框变淡蓝
+  // 只影响「之后」的新消息：老气泡上的名字用发送时记下的 modelLabel，不会跟着换
+});
+
+$("#mindRange").addEventListener("input", (event) => setEffortLevel(event.target.value));
+$("#mindBgToggle").addEventListener("change", (event) => {
+  state.bgFollow = event.target.checked;
+  localStorage.setItem(MIND_BG_SWITCH_KEY, state.bgFollow ? "1" : "0");
+  applyMindBackground(true);
+});
+
+$("#keepRecent").addEventListener("input", (event) => {
+  $("#keepRecentValue").textContent = event.target.value;
+});
+
+$("#compressButton").addEventListener("click", compressContext);
+
+$("#clearContextButton").addEventListener("click", async () => {
+  const button = $("#clearContextButton");
+  if (!clearArmed) {
+    clearArmed = true;
+    button.classList.add("is-armed");
+    button.textContent = "再次点击确认删除";
+    $("#compressionNote").textContent = "删除后当前对话与摘要无法恢复，请再次点击确认。";
+    clearTimer = setTimeout(resetClearButton, 3000);
+    return;
+  }
+  await clearContext();
+  resetClearButton();
+});
+
+$("#toggleController").addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleController();
+});
+controllerHandle.addEventListener("click", (event) => {
+  if (event.target.closest("button")) return;
+  toggleController();
+});
+$("#navController").addEventListener("click", () => {
+  toggleController();
+});
+
+$("#navNewChat").addEventListener("click", startNewConversation);
+
+/* 「空间」按钮：直接在当前页换成 /space（本机文件页），不新开标签 */
+$("#navSpace").addEventListener("click", () => {
+  location.href = "/space";
+});
+
+/* 「小应用」按钮：换成预留的小应用页 /lab（同样是替换当前页，不新开标签）。
+   页面本身与聊天页完全独立，接入点在 web/lab.js 顶部 LAB_APP（详见 web/lab/README.md）。 */
+$("#navLab").addEventListener("click", () => {
+  location.href = "lab.html";
+});
+
+/* 「回到最新」：把视图拉回底部，然后恢复自动跟随 */
+$("#scrollLatestBtn").addEventListener("click", () => {
+  messagesPinned = true;
+  updateScrollLatestHint();
+  messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: "smooth" });
+});
+
+/* 消息流滚动位置：贴底才自动跟随；一旦往上翻就彻底不动镜头 */
+messagesEl.addEventListener("scroll", () => {
+  messagesPinned = nearMessagesBottom();
+  updateScrollLatestHint();
+});
+
+/* ========== 对外接口（theme.js 调用） ========== */
+window.chatApp = {
+  getState: () => ({ sessionId: state.sessionId, historyId: state.historyId, messages: state.messages, summary: state.summary }),
+  restore: restoreConversation,
+  save: persistCurrentConversation,
+  compress: compressContext,
+  clear: clearContext,
+  newChat: startNewConversation,
+};
+
+/* ========== 初始化 ========== */
+state.effortLevel = Number(localStorage.getItem(EFFORT_LEVEL_KEY)) || 3;
+state.bgFollow = localStorage.getItem(MIND_BG_SWITCH_KEY) === "1";
+loadState();
+renderMindUI(false);
+renderMessages({ bottom: true });
+updateMemoryMeters();
+loadConfig();
+setupAttachmentDrop();
+setupAskMenu();          // 「问」的随机日常问题菜单
+setupRepoButton();       // 「所有存储库」：选文件夹定为默认保存位置
+setupSessionMenu();      // 右键删除会话（只在左侧栏）
+consumeSpacePayload();   // 从 /space 带回来的文件
+syncSessionFromServer(); // 刷新 / 切页回来时：把服务端正在生成或已生成完、但没显示的回答补回来
+
+/* auth.js 登录/退出/改头像后广播，这里据此刷新「用户 id + 头像」 */
+window.addEventListener("authchange", (event) => {
+  window.currentAuthUser = event.detail?.user || null;
+  renderMessages();
+});
