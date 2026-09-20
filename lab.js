@@ -148,7 +148,8 @@
   var STATIC_MODE = location.protocol === "file:" || !["127.0.0.1", "localhost"].includes(location.hostname);
   var labBackBtn = document.getElementById("labBack");
   if (STATIC_MODE) {
-    if (labBackBtn) labBackBtn.style.display = "none";  // 静态托管（GitHub Pages 等）没有聊天页可回
+    if (labBackBtn) labBackBtn.style.display = "none";
+    if (labBackBtn) labBackBtn.title = "静态托管无聊天页";  // 静态托管（GitHub Pages 等）没有聊天页可回
   } else if (labBackBtn) {
     labBackBtn.addEventListener("click", () => { location.href = "/"; });
     document.addEventListener("keydown", (event) => {
