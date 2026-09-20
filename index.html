@@ -5,17 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DSH大骚货频道</title>
 <link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
-<link rel="stylesheet" href="/theme.css">
-<link rel="stylesheet" href="/app.css">
-<link rel="stylesheet" href="/pet.css">
-<link rel="stylesheet" href="/auth.css">
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="pet.css">
+<link rel="stylesheet" href="auth.css">
 </head>
 <body>
 
 <!-- ===== 顶部标题栏 ===== -->
 <div class="theme-bar">
   <!-- 左上角 Logo：换成自己的图片 → 改 web/theme.js 顶部的 BRAND_LOGO_SRC（详见 web/assets/brand/README.md） -->
-  <img id="brandLogo" class="brand-logo" src="/assets/brand/logo.svg" alt="" draggable="false" />
+  <img id="brandLogo" class="brand-logo" src="assets/brand/logo.svg" alt="" draggable="false" />
   <!-- Logo 后面的两段标题：第一段加粗白字更大，第二段常规蓝字更小，两段文字底部对齐（基线对齐）。
        改文案直接改这两行即可。 -->
   <div class="brand-title" aria-label="deepseek">
@@ -27,7 +27,7 @@
   <!-- ===== 左侧边栏 ===== -->
   <aside class="sidebar">
     <!-- 左侧圆标：换成自己的图片 → 改 web/theme.js 顶部的 BRAND_MARK_SRC（详见 web/assets/brand/README.md） -->
-    <div class="sidebar-avatar"><img id="brandMark" class="brand-mark" src="/assets/brand/logo.svg" alt="DSH" draggable="false" /></div>
+    <div class="sidebar-avatar"><img id="brandMark" class="brand-mark" src="assets/brand/logo.svg" alt="DSH" draggable="false" /></div>
 
     <nav class="sidebar-nav" aria-label="主导航">
       <button class="nav-item" type="button" id="navNewChat">
@@ -247,7 +247,7 @@
         <!-- 小 logo + 一句话同排显示（logo + 文字），图片地址跟左上角同一个常量 BRAND_LOGO_SRC -->
         <div class="center-head">
           <div class="center-icon">
-            <img id="centerLogo" class="center-logo" src="/assets/brand/logo.svg" alt="" draggable="false" />
+            <img id="centerLogo" class="center-logo" src="assets/brand/logo.svg" alt="" draggable="false" />
           </div>
           <p class="center-slogan">咕嘎高松灯</p>
         </div>
@@ -443,10 +443,10 @@
 </div>
 
 <!-- 不透明度调节的读写都在 tuner-store.js（页面地址 /tuner），必须先于其他脚本加载 -->
-<script src="/tuner-store.js"></script>
-<script src="/app.js"></script>
-<script src="/theme.js"></script>
-<script src="/auth.js"></script>
-<script src="/pet.js"></script>
+<script src="tuner-store.js"></script>
+<script src="app.js"></script>
+<script src="theme.js"></script>
+<script src="auth.js"></script>
+<script src="pet.js"></script>
 </body>
 </html>
