@@ -778,6 +778,24 @@
         })
         .catch(function (e) { Cloud.note("云同步失败：" + e.message, "error"); return false; });
     },
+    /* 公开曲谱拉取（所有访客自动执行，无需 token/配置）：
+       走 jsDelivr CDN（国内可访问），从 GitHub 仓库 scores.json 读取公开曲目，
+       与本机已有曲目按 id 合并（本机未推送的保留，云端新增的并入）。 */
+    pullPublic: function () {
+      var url = "https://cdn.jsdelivr.net/gh/lovoxi-608/DSH@main/updream-data/scores.json?t=" + Date.now();
+      return fetch(url, { cache: "no-store" })
+        .then(function (res) { if (!res.ok) throw new Error("HTTP " + res.status); return res.json(); })
+        .then(function (data) {
+          var scores = (data && data.scores) || [];
+          var mine = readJSON(K.scores, []) || [];
+          var mineIds = {}; mine.forEach(function (r) { mineIds[r.id] = true; });
+          var merged = mine.slice(), added = 0;
+          scores.forEach(function (r) { if (!mineIds[r.id]) { merged.push(r); added++; } });
+          if (added > 0) { writeJSON(K.scores, merged); window.dispatchEvent(new CustomEvent("dfh-cloud-sync")); }
+          return { ok: true, added: added, total: merged.length };
+        })
+        .catch(function (e) { return { ok: false, error: e.message }; });
+    },
     /* 测试连接 */
     test: function () {
       var c = Cloud.cfg();

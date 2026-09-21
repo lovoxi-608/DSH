@@ -349,6 +349,10 @@
   bind();
   renderLogin();
   render();
+  /* 自动拉取公开曲谱（所有访客可见） */
+  if (typeof Cloud !== "undefined" && Cloud.pullPublic) {
+    Cloud.pullPublic().then(function (res) { if (res && res.ok && res.added > 0) render(); });
+  }
   /* 从详情页齿轮进入时自动打开管理面板 */
   if (location.search.indexOf("admin=1") >= 0 && D.Admin && D.Admin.isAdmin()) {
     if (typeof openAdminPanel === "function") setTimeout(openAdminPanel, 300);
