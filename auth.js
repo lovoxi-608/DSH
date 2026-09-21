@@ -443,7 +443,7 @@ const PERSON_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" str
         return true;
       }
       if (action === "登录 / 注册") {
-        openAuth();
+        openSettings();
         return true;
       }
       if (action === "退出登录") {
