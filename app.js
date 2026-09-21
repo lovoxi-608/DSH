@@ -10,11 +10,11 @@ const AI_AVATAR_SRC = "/assets/ai/dafeiyu.png";
 /* ★ 思考强度 5 个档位各自对应的「聊天背景图」（键 = 档位 1~5）
    图片放 web/assets/bg/ 下，想换图只改这里的地址即可 */
 const MIND_BG_IMAGES = {
-  1: "/assets/bg/1.png",
-  2: "/assets/bg/2.png",
-  3: "/assets/bg/3.png",
-  4: "/assets/bg/4.png",
-  5: "/assets/bg/5.png",
+  1: "/DSH/assets/bg/1.png",
+  2: "/DSH/assets/bg/2.png",
+  3: "/DSH/assets/bg/3.png",
+  4: "/DSH/assets/bg/4.png",
+  5: "/DSH/assets/bg/5.png",
 };
 const EFFORT_LEVEL_KEY = "mogao-effort-level";  // 记住上次选的思考强度
 const MIND_BG_SWITCH_KEY = "mogao-mind-bg";     // 「背景随强度」开关（"1" = 开）
