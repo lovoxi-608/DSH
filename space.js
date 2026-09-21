@@ -423,7 +423,7 @@
       }
       localStorage.setItem(PAYLOAD_KEY, JSON.stringify(payload));
       setStatus("已带上《" + state.fileName + "》，正在回到聊天页…", "ok");
-      location.href = "/";
+      location.href = "/DSH/";
     } catch (error) {
       setStatus("发送到对话失败：" + (error && error.message ? error.message : error), "error");
     }

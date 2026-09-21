@@ -2,15 +2,16 @@
 
 const THEME_KEY = "mogao-theme";
 const THEMES = ["jiangnan", "palace", "huizhou", "minnan", "zen"];
+const GH_PAGES_BASE = "/DSH";
 
 /* ═══════════════════════════════════════════════════════════════════
    ★ 品牌图：想换成自己的图片，只改下面这两行
-     图片放到 web/assets/brand/ 下，例如 "my-logo.png" → "/assets/brand/my-logo.png"
+     图片放到 web/assets/brand/ 下，例如 "my-logo.png" → "/DSH/assets/brand/my-logo.png"
      （说明见 web/assets/brand/README.md）
-   ═══════════════════════════════════════════════════════════════════ */
-const BRAND_LOGO_SRC = "/assets/brand/deepseek.png";        // 顶部左上角的横标
-const BRAND_MARK_SRC = "/assets/brand/deepseek.png";        // 左侧边栏的圆标（建议用正方形图）
-const BRAND_LOGO_FALLBACK = "/assets/brand/deepseek.png";   // 地址写错时退回这张，不会出现破图
+   ═══════════════════════════════════════════════════════════ */
+const BRAND_LOGO_SRC = `${GH_PAGES_BASE}/assets/brand/deepseek.png`;        // 顶部左上角的横标
+const BRAND_MARK_SRC = `${GH_PAGES_BASE}/assets/brand/deepseek.png`;        // 左侧边栏的圆标（建议用正方形图）
+const BRAND_LOGO_FALLBACK = `${GH_PAGES_BASE}/assets/brand/deepseek.png`;   // 地址写错时退回这张，不会出现破图
 
 function bindBrandImage(selector, src) {
   const image = document.querySelector(selector);

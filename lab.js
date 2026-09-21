@@ -151,9 +151,9 @@
     if (labBackBtn) labBackBtn.style.display = "none";
     if (labBackBtn) labBackBtn.title = "静态托管无聊天页";  // 静态托管（GitHub Pages 等）没有聊天页可回
   } else if (labBackBtn) {
-    labBackBtn.addEventListener("click", () => { location.href = "/"; });
+    labBackBtn.addEventListener("click", () => { location.href = "/DSH/"; });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") location.href = "/";   // Esc 直接回聊天页
+      if (event.key === "Escape") location.href = "/DSH/";   // Esc 直接回聊天页
     });
   }
 

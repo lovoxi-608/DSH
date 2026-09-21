@@ -2021,9 +2021,9 @@ $("#navController").addEventListener("click", () => {
 
 $("#navNewChat").addEventListener("click", startNewConversation);
 
-/* 「空间」按钮：直接在当前页换成 /space（本机文件页），不新开标签 */
+/* 「空间」按钮：直接在当前页换成 /DSH/space（本机文件页），不新开标签 */
 $("#navSpace").addEventListener("click", () => {
-  location.href = "/space";
+  location.href = "/DSH/space";
 });
 
 /* 「小应用」按钮：换成预留的小应用页 /lab（同样是替换当前页，不新开标签）。
